@@ -11,6 +11,7 @@ import {
 	rmSync,
 	statSync,
 	symlinkSync,
+	utimesSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,6 +34,10 @@ const fresh = (): string => {
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+/** What is in develop/ besides the writer lock, which leaves its highest number behind, marked released. */
+const developFiles = (root: string) =>
+	readdirSync(join(root, "develop")).filter((name) => !/^tasks\.lock\.[1-9][0-9]*$/.test(name));
+const lockFiles = (root: string) => readdirSync(join(root, "develop")).filter((name) => name.startsWith("tasks.lock"));
 const registered = (root: string) => {
 	const store = new DevelopTasksStoreV0(root);
 	const project = store.registerProject({ name: "demo", path: "/work/demo", observedGitRoot: "/work/demo" });
@@ -80,7 +85,7 @@ describe("tasks survive a restart and keep their words", () => {
 		registered(root);
 		expect(statSync(join(root, "develop")).mode & 0o777).toBe(0o700);
 		expect(statSync(join(root, "develop", "tasks.json")).mode & 0o777).toBe(0o600);
-		expect(readdirSync(join(root, "develop"))).toEqual(["tasks.json"]);
+		expect(developFiles(root)).toEqual(["tasks.json"]);
 		expect(readFileSync(join(root, "events", "events.log"), "utf8")).toBe("evidence");
 		expect(readdirSync(root).sort()).toEqual(["develop", "events"]);
 	});
@@ -277,7 +282,9 @@ describe("a stale edit is refused, never merged", () => {
 		expect(read.file.tasks).toHaveLength(48);
 		expect(new Set(read.file.tasks.map((t) => t.title)).size).toBe(48);
 		expect(read.file.revision).toBe(49);
-		expect(readdirSync(join(root, "develop"))).toEqual(["tasks.json"]);
+		expect(developFiles(root)).toEqual(["tasks.json"]);
+		// However many writers took turns, one lock file is left: the highest number, released.
+		expect(lockFiles(root)).toHaveLength(1);
 	}, 60_000);
 });
 
@@ -293,7 +300,7 @@ describe("interrupted writes and storage errors", () => {
 		});
 		expect(crashing.createTask(project.id, { title: "lost" })).toMatchObject({ ok: false, code: "storage-failed" });
 		expect(bytesOf(root).equals(before)).toBe(true);
-		expect(readdirSync(join(root, "develop"))).toEqual(["tasks.json"]);
+		expect(developFiles(root)).toEqual(["tasks.json"]);
 		// A real crash cannot clean up after itself: a temporary file a dead writer left is removed by the next writer, never read.
 		const leftover = join(root, "develop", "tasks.json.tmp-99999-0123456789ab");
 		writeFileSync(leftover, '{"half":');
@@ -319,11 +326,22 @@ describe("interrupted writes and storage errors", () => {
 		expect(bytesOf(root).equals(before)).toBe(true);
 	});
 
-	it("a lock held by a live process makes a writer answer busy; a lock of a dead process is replaced", () => {
+	it("a lock held by a live process makes a writer answer busy; a lock of a dead process is superseded", () => {
 		const root = fresh();
 		const { project } = registered(root);
-		const lock = join(root, "develop", "tasks.lock");
+		// Every write leaves exactly one lock file behind, the highest number, marked released.
+		const [rest] = lockFiles(root);
+		expect(lockFiles(root)).toHaveLength(1);
+		const n = Number(rest!.slice("tasks.lock.".length));
+		expect(JSON.parse(readFileSync(join(root, "develop", rest!), "utf8"))).toEqual({ released: true });
+		const lock = join(root, "develop", `tasks.lock.${n + 1}`);
 		writeFileSync(lock, `${JSON.stringify({ pid: process.ppid, at: "now" })}\n`);
+		expect(new DevelopTasksStoreV0(root, { lockWaitMs: 60 }).createTask(project.id, { title: "x" })).toMatchObject({
+			ok: false,
+			code: "busy",
+		});
+		// A dead lock BELOW the highest number is not the lock: the highest one still holds.
+		writeFileSync(join(root, "develop", `tasks.lock.${n}`), `${JSON.stringify({ released: true })}\n`);
 		expect(new DevelopTasksStoreV0(root, { lockWaitMs: 60 }).createTask(project.id, { title: "x" })).toMatchObject({
 			ok: false,
 			code: "busy",
@@ -333,7 +351,47 @@ describe("interrupted writes and storage errors", () => {
 		});
 		writeFileSync(lock, `${JSON.stringify({ pid: Number(dead.stdout), at: "then" })}\n`);
 		expect(new DevelopTasksStoreV0(root, { lockWaitMs: 60 }).createTask(project.id, { title: "y" }).ok).toBe(true);
+		// The dead holder's lock is superseded by the next number, never removed to be replaced; the lower numbers are gone.
 		expect(existsSync(lock)).toBe(false);
+		expect(lockFiles(root)).toEqual([`tasks.lock.${n + 2}`]);
+	});
+
+	it("a writer that took a lock is never displaced by a slow one that judged the old holder dead", () => {
+		const root = fresh();
+		const { project } = registered(root);
+		const [rest] = lockFiles(root);
+		const n = Number(rest!.slice("tasks.lock.".length));
+		const dead = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], {
+			encoding: "utf8",
+		});
+		// Holder A died holding n+1. B supersedes it with n+2 and is working (alive: the test's parent). A slow contender C that saw n+1
+		// dead may only try n+2, which exists; it must find the lock held and wait, not remove or move B's lock.
+		writeFileSync(
+			join(root, "develop", `tasks.lock.${n + 1}`),
+			`${JSON.stringify({ pid: Number(dead.stdout), at: "then" })}\n`,
+		);
+		const b = join(root, "develop", `tasks.lock.${n + 2}`);
+		writeFileSync(b, `${JSON.stringify({ pid: process.ppid, at: "now" })}\n`);
+		const before = readFileSync(b, "utf8");
+		const c = new DevelopTasksStoreV0(root, { lockWaitMs: 80 }).createTask(project.id, { title: "slow" });
+		expect(c).toMatchObject({ ok: false, code: "busy" });
+		expect(readFileSync(b, "utf8")).toBe(before);
+		const read = new DevelopTasksStoreV0(root).read();
+		expect(read.ok && read.file.tasks).toHaveLength(0);
+	});
+
+	it("leaves a lock's crashed temporary file for the next writer to sweep once it is old, not while it may be a live one's", () => {
+		const root = fresh();
+		const { project } = registered(root);
+		const fresh_ = join(root, "develop", "tasks.lock.tmp-99999-0123456789ab");
+		const old = join(root, "develop", "tasks.lock.tmp-99998-0123456789ab");
+		writeFileSync(fresh_, "{}");
+		writeFileSync(old, "{}");
+		const longAgo = new Date(Date.now() - 120_000);
+		utimesSync(old, longAgo, longAgo);
+		ok(new DevelopTasksStoreV0(root).createTask(project.id, { title: "t" }));
+		expect(existsSync(fresh_)).toBe(true);
+		expect(existsSync(old)).toBe(false);
 	});
 });
 
@@ -353,7 +411,7 @@ describe("a damaged, foreign or hostile file is unreadable, reported, and left e
 			reason,
 		});
 		expect(bytesOf(root).equals(before)).toBe(true);
-		expect(readdirSync(join(root, "develop"))).toEqual(["tasks.json"]);
+		expect(developFiles(root)).toEqual(["tasks.json"]);
 	};
 	const put = (root: string, content: string | Buffer) => {
 		mkdirSync(join(root, "develop"), { recursive: true });

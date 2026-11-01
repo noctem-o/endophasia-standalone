@@ -81,7 +81,7 @@ fetches each Studio read route family (the snapshot, the session list and one re
 
 - One small file, rewritten whole, at most 4 MiB: 8 projects, 300 tasks; a title of 120 characters; 4 000 characters each for description and
   acceptance criteria; notes of 280. Text is closed: no control characters except newline and tab, no line separators, no bidirectional overrides.
-- Every change is: take `develop/tasks.lock` (created exclusively, naming its pid; a lock of a dead process is replaced), **read the file again
+- Every change is: take the writer lock (`develop/tasks.lock.<n>`: the highest number is the lock, created exclusively, naming its pid; a lock of a dead process is superseded by the next number, never removed from under a writer that has just taken it), **read the file again
   from disk**, validate, apply **one** change to that copy, validate the result, write a uniquely named temporary file (mode `0600`, created
   exclusively and never through a link), `fsync`, rename over the file, `fsync` the directory. A crash leaves the old file or the new one.
   Temporary files a crash left are removed by the next writer. A change that finds nothing to do (choosing what is already chosen, linking a session
@@ -143,10 +143,12 @@ automatically, and a reference gives a task no control over a session: no resume
 - `endo task` can list, add and change status; editing words and links is in the workbench page.
 - A registered path or task text is not scanned for secrets.
 - The store has no cross-machine sync. Moving a project to another path means registering it again.
-- Locks: a lock of a dead process is taken aside by an atomic rename and discarded only if it is still the very lock judged stale (a live one a
-  third writer took meanwhile is put back); if two writers find the same dead-pid lock at the same moment and a third acquires between the rename and
-  the put-back, two can still proceed (a window of microseconds). And a lock naming a pid the system has since reused makes
-  writes answer `busy` until `develop/tasks.lock` is removed by hand. This is the same pattern as the attachment's writer lock, documented rather than redesigned.
+- Locks: the lock is a series of numbered files and the highest number holds it (see the header of `storage/develop-tasks.ts`). A writer takes it by
+  creating the next number (a hard link of a finished file, so only one contender can create it); a lock whose process is gone is simply
+  superseded by the next number; nothing is removed or rewritten to take a lock from another writer, and the highest number is never deleted (a
+  release marks it released), so a number is never reused. One `tasks.lock.<n>` file therefore remains at rest; it is harmless. What is left: a
+  lock naming a pid the system has since reused makes writes answer `busy` until `develop/tasks.lock.<n>` is removed by hand. This is a stricter
+  pattern than the attachment's writer lock, which this slice does not touch.
 - Real-runtime evidence is one local smoke, not conformance: the installed **Pi 1.4.0** launched once from the registered directory with the workbench
   and `--project`; a page paired, created a task, linked the session (Pi's own session id fit the reference format; relation `current`) and moved its
   status. **No prompt was proposed, no model or provider was selected, no terminal approval was asked**, and the store was a throwaway directory deleted

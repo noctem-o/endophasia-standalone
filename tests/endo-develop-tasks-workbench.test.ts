@@ -500,11 +500,11 @@ describe("a mismatched, missing, unknown or damaged workspace is read-only and s
 		const w = launch();
 		const grant = await w.pair();
 		rmSync(join(w.root, "develop", "tasks.json"));
-		writeFileSync(join(w.root, "develop", "tasks.lock"), `${JSON.stringify({ pid: process.ppid, at: "now" })}\n`);
+		writeFileSync(join(w.root, "develop", "tasks.lock.1"), `${JSON.stringify({ pid: process.ppid, at: "now" })}\n`);
 		const reply = await w.call("POST", "workspace/tasks/create", { title: "x" }, grant);
 		// (the lock wait is two seconds by default; either answer is a refusal that changed nothing)
 		expect([409, 503]).toContain(reply.status);
-		expect(readdirSync(join(w.root, "develop"))).toEqual(["tasks.lock"]);
+		expect(readdirSync(join(w.root, "develop"))).toEqual(["tasks.lock.1"]);
 	}, 15_000);
 });
 
