@@ -23,6 +23,8 @@ export interface WorkspaceState {
 	notice: WorkspaceRefusal | null;
 	/** The task the operator chose on this page. `undefined`: none chosen here yet, so the broker's remembered choice stands. */
 	chosen: string | null | undefined;
+	/** The operator chose a task after the request now in flight was sent: that choice is newer than the request, so its answer must not replace it. */
+	choseSinceStart: boolean;
 	/** When the last good read arrived (the browser's clock). */
 	readAt: Date | null;
 	/** Replies older than this are ignored: a slow answer never overwrites a newer one. */
@@ -37,6 +39,7 @@ export const initialWorkspace = (): WorkspaceState => ({
 	problem: null,
 	notice: null,
 	chosen: undefined,
+	choseSinceStart: false,
 	readAt: null,
 	seq: 0,
 });
@@ -62,18 +65,20 @@ export type WorkspaceAction =
 export function reduceWorkspace(state: WorkspaceState, action: WorkspaceAction): WorkspaceState {
 	switch (action.type) {
 		case "start":
-			return { ...state, busy: true, seq: action.seq };
+			return { ...state, busy: true, seq: action.seq, choseSinceStart: false };
 		case "done": {
 			if (action.seq !== state.seq) return state;
 			const { reply } = action;
 			if (reply.kind === "absent") return { ...state, busy: false, availability: "absent" };
 			if (reply.kind === "workspace") {
 				const view = reply.record;
-				const chosen = action.adopt
-					? view.selectedTaskId
-					: state.chosen != null && !view.tasks.some((t) => t.id === state.chosen)
-						? undefined
-						: state.chosen;
+				// Creating adopts the new task, unless the operator chose another task while the request was out: the later choice wins.
+				const chosen =
+					action.adopt && !state.choseSinceStart
+						? view.selectedTaskId
+						: state.chosen != null && !view.tasks.some((t) => t.id === state.chosen)
+							? undefined
+							: state.chosen;
 				return {
 					...state,
 					busy: false,
@@ -99,7 +104,7 @@ export function reduceWorkspace(state: WorkspaceState, action: WorkspaceAction):
 			return { ...state, busy: false, current: false, problem };
 		}
 		case "choose":
-			return { ...state, chosen: action.taskId };
+			return { ...state, chosen: action.taskId, choseSinceStart: true };
 		case "dismiss":
 			return { ...state, notice: null };
 		case "unpair":

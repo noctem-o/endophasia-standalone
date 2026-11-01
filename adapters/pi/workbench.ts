@@ -56,6 +56,7 @@ import type { EndoDigestKeyV0 } from "../../runtime/contracts/keyed-digest.ts";
 import type { DevelopTasksStoreV0 } from "../../storage/develop-tasks.ts";
 import type { RpcEventV0 } from "../rpc-jsonl/rpc-connection.ts";
 import { LIVE_TRANSCRIPT_SCHEMA_V1, LiveTranscriptV0 } from "./live-transcript.ts";
+import { piEndoSessionIdV0 } from "./mapping.ts";
 import { PiRpcRefusalV0 } from "./rpc.ts";
 import {
 	type WorkbenchDeskV0,
@@ -251,7 +252,7 @@ export class WorkbenchBrokerV0 implements EndoCockpitWorkbenchV0 {
 						connected: () => {
 							const s = options.session;
 							return !this.#disposed && !this.#ended && s.live && s.piSessionId !== null
-								? { sessionId: `endo.session.pi.${s.piSessionId}` }
+								? { sessionId: piEndoSessionIdV0(s.piSessionId) }
 								: null;
 						},
 						...(options.aliasOf === undefined ? {} : { aliasOf: options.aliasOf }),

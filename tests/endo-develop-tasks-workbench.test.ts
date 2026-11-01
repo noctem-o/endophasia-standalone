@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { piEndoSessionIdV0 } from "../adapters/pi/mapping.ts";
 import { WorkbenchBrokerV0 } from "../adapters/pi/workbench.ts";
 import type { EndoDevelopWorkspaceViewV0 } from "../protocol/develop-tasks.ts";
 import { DevelopTasksStoreV0 } from "../storage/develop-tasks.ts";
@@ -310,6 +311,29 @@ describe("a session reference is explicit, attributed and scoped to its launch",
 		);
 		expect(removed.tasks[0]!.sessions).toEqual([]);
 		expect(w.session.promptCalls).toEqual([]);
+	});
+
+	it("stores a linked session under the same coordinate the evidence mapper gives it, even for an id outside the plain grammar", async () => {
+		const w = launch();
+		w.session.piSessionId = "session:one";
+		const grant = await w.pair();
+		const task = view(await w.call("POST", "workspace/tasks/create", { title: "t" }, grant)).tasks[0]!;
+		const linked = await w.call(
+			"POST",
+			"workspace/tasks/link-session",
+			{ taskId: task.id, expectedRevision: task.revision },
+			grant,
+		);
+		expect(linked.status).toBe(200);
+		const stored = new DevelopTasksStoreV0(w.root).read();
+		const expected = piEndoSessionIdV0("session:one");
+		expect(expected).toMatch(/^endo\.session\.pi\.sha256-/);
+		expect(stored.ok && stored.file.tasks[0]!.sessions[0]!.sessionId).toBe(expected);
+		// The alias is looked up under that same coordinate, and the reference is current.
+		expect(view(linked).tasks[0]!.sessions[0]).toMatchObject({
+			alias: `alias:${expected.length}`,
+			relation: "current",
+		});
 	});
 
 	it("links a session of an attachment whose name is as long as the registry allows", async () => {

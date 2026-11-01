@@ -236,6 +236,14 @@ describe("the state", () => {
 			done(3, read(view({ selectedTaskId: task(2).id })), { adopt: true }),
 		);
 		expect(selectedTask(state)?.title).toBe("Task 2");
+		// ...but not over a choice the operator made after the create request went out: the later choice wins, as it does on the server.
+		state = apply(
+			state,
+			{ type: "start", seq: 4 },
+			{ type: "choose", taskId: task(1).id },
+			done(4, read(view({ selectedTaskId: task(2).id })), { adopt: true }),
+		);
+		expect(selectedTask(state)?.title).toBe("Task 1");
 	});
 
 	it("choosing a task changes no task: statuses and revisions are exactly those of the last read", () => {
