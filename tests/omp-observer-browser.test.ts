@@ -183,6 +183,40 @@ suite("Oh My Pi saved sessions in DEVELOP", () => {
 		expect(await page.eval<number>("document.querySelectorAll('[data-testid=omp-problem]').length")).toBe(0);
 	});
 
+	it("reaches the inspector on a phone: choose a session, then Details, then back to its activity", async () => {
+		const { page } = await open(390, 844);
+		await page.waitFor("document.querySelectorAll('[data-testid=omp-row]').length === 3");
+		await page.eval(
+			`[...document.querySelectorAll('[data-testid=omp-row]')].find((e) => e.textContent.includes(${JSON.stringify(ID_A.slice(-8))})).click()`,
+		);
+		await page.waitFor(
+			"document.querySelector('[data-testid=omp-activity]') && document.querySelector('[data-testid=omp-details]')",
+		);
+		expect(await page.eval<number>("document.querySelectorAll('[data-testid=omp-detail]').length")).toBe(0);
+		await page.click("[data-testid=omp-details]");
+		await page.waitFor("document.querySelector('[data-testid=omp-detail]')");
+		expect(await page.text("[data-testid=omp-exit]")).toContain("reported by OMP");
+		expect(await page.text("[data-testid=surface-source]")).toContain("Oh My Pi saved session");
+		await page.eval(
+			"[...document.querySelectorAll('[data-testid=develop-crumb] button')].find((b) => b.textContent.includes('Activity')).click()",
+		);
+		await page.waitFor("document.querySelector('[data-testid=omp-activity]')");
+		expect(
+			await page.eval<boolean>("document.documentElement.scrollWidth <= document.documentElement.clientWidth"),
+		).toBe(true);
+		expect(page.seen.problems).toEqual([]);
+	});
+
+	it("offers no Details control on a wide screen, where the inspector is beside the activity", async () => {
+		const { page } = await open();
+		await page.waitFor("document.querySelectorAll('[data-testid=omp-row]').length === 3");
+		await page.click("[data-testid=omp-row]");
+		await page.waitFor(
+			"document.querySelector('[data-testid=omp-detail]') && document.querySelector('[data-testid=omp-activity]')",
+		);
+		expect(await page.eval<number>("document.querySelectorAll('[data-testid=omp-details]').length")).toBe(0);
+	});
+
 	it("moves between OMP rows with the arrow keys, Home and End", async () => {
 		const { page } = await open();
 		await page.waitFor("document.querySelectorAll('[data-testid=omp-row]').length === 3");

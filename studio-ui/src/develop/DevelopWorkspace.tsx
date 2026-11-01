@@ -497,7 +497,7 @@ export function DevelopWorkspace({
 								beacon={beacon}
 							/>
 						) : ompMode ? (
-							<OmpActivity omp={omp} />
+							<OmpActivity omp={omp} onDetails={() => dispatch({ type: "stage", stage: "details" })} />
 						) : (
 							open
 						)

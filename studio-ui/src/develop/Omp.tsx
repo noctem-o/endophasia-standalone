@@ -172,7 +172,8 @@ function Item({ item }: { item: EndoOmpActivityItemV0 }): ReactElement {
 	);
 }
 
-export function OmpActivity({ omp }: { omp: OmpApi }): ReactElement {
+/** `onDetails`: on a narrow screen, where the inspector is its own stage, the way to it (as the recorded activity has). */
+export function OmpActivity({ omp, onDetails }: { omp: OmpApi; onDetails?: () => void }): ReactElement {
 	const { detail, reading, problem } = omp.state;
 	return (
 		<Panel
@@ -182,15 +183,22 @@ export function OmpActivity({ omp }: { omp: OmpApi }): ReactElement {
 			className="develop-activity"
 			resetKey={detail?.session.selector ?? null}
 			tools={
-				<button
-					type="button"
-					className="btn"
-					data-testid="omp-session-read-again"
-					disabled={reading || omp.state.selected === null}
-					onClick={omp.refreshSession}
-				>
-					{reading ? "Reading…" : "Read again"}
-				</button>
+				<>
+					{onDetails !== undefined && detail !== null ? (
+						<button type="button" className="btn" data-testid="omp-details" onClick={onDetails}>
+							Details
+						</button>
+					) : null}
+					<button
+						type="button"
+						className="btn"
+						data-testid="omp-session-read-again"
+						disabled={reading || omp.state.selected === null}
+						onClick={omp.refreshSession}
+					>
+						{reading ? "Reading…" : "Read again"}
+					</button>
+				</>
 			}
 		>
 			{problem === null ? null : <Note tone="warn">{problem}</Note>}
