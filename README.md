@@ -114,7 +114,11 @@ node dist/cli/index.js harness attach ./recordings \
    model-provided reasoning (folded by default, with a **Folded | Shown** display preference), and the Git
    worktree's changes in **Conversation | Changes**. **Focus** closes the changes/context dock; it does not
    change the underlying session.
-5. Stop the attached process with **Ctrl-C** when finished.
+5. Optionally keep **tasks** across sessions: register a project once with
+   `endo project add --root ./recordings --name "Parser work" --path /path/to/project`, then add
+   `--project endo.project.<id>` to the attach command. The **Task** view and the bar's task picker (`T`) hold what you
+   intend to get done, with a status only you move; choosing a task sends nothing. See [projects and tasks](docs/develop-tasks.md).
+6. Stop the attached process with **Ctrl-C** when finished.
 
 Pi uses its configured model and provider. Select them with `--provider <provider> --model <model>`, or select a
 Pi executable with `--pi /path/to/pi`. `--cwd` is Pi's project directory; `./recordings` is the separate
@@ -124,7 +128,7 @@ by its attach process. DSH imports and recorded-only sessions remain read-only.
 
 See [live workbench and approval boundaries](docs/develop-workbench.md),
 [reasoning and privacy](docs/develop-reasoning.md), [Field usage](docs/develop-field.md) and
-[Git change review](docs/develop-project-review.md).
+[Git change review](docs/develop-project-review.md) and [projects and tasks](docs/develop-tasks.md).
 
 ### Record and inspect from the CLI
 
@@ -199,7 +203,7 @@ live workbench. `endo web`, a native desktop app and native installers are not y
 | **Observe** | Recorded runtime identity, capability evidence, source condition, event timeline and inspector | Read-only snapshots; explicit refresh |
 | **Compare** | Eligible Pi/DSH recordings and separate lifecycle, tool-call, tool-result and outcome verdicts | Read-only comparison; no assertion of causal equivalence |
 | **Develop — recorded** | Sessions, recorded run structure, tool activity, reported usage and links to Observe/Compare | Read-only; a recorded `running` status is not a live process |
-| **Develop — live Pi** | Conversation, optional model-provided reasoning, PROMPT/STEER/QUEUE/STOP requests, live status, project/worktree context and Git diff review | Only the paired workbench can request; the controlling terminal approves; worktree inspection is read-only |
+| **Develop — live Pi** | Conversation, optional model-provided reasoning, PROMPT/STEER/QUEUE/STOP requests, live status, project/worktree context and Git diff review, and your registered project's tasks | Only the paired workbench can request; the controlling terminal approves; worktree inspection is read-only; task metadata can only be read or changed by a paired page and never reaches the agent |
 
 Capabilities and Evolve remain placeholders. Cognition and Research workspaces, general model-internal
 observation, an embedded terminal, and live control of other harnesses are not shipped.
@@ -233,6 +237,7 @@ behind each capability. Published alphas have the narrower scope described above
 | DSH cold import and loss accounting | `dsh import`, `dsh loss-accounting` | Five retained captures from pinned `dsh-v0.2.1-rc.2`, including failure/resume cases, plus adversarial tests. No live DSH control |
 | React Observe, Compare and recorded-session Develop | `studio` | Projection, HTTP and browser tests; package smoke checks the built interface. Field is optional in source builds; comparison selectors are bound to verified store generations |
 | Governed live Pi workbench | `harness attach --control --workbench` | Prompt, steer, queue and STOP requests require terminal approval; bounded private conversation, structured reasoning relay and Git change review. Broker, HTTP, pseudo-terminal and browser tests, plus a real Pi 1.0.1 relay test against a fake model endpoint. No general real-model workbench conformance claim |
+| DEVELOP projects and tasks | `project add\|list`, `task list\|add\|status`, `harness attach … --workbench --project <id>` | Operator metadata in `<root>/develop/tasks.json`, separate from evidence; atomic, locked, revisioned, bounded. Store, multi-process, broker, HTTP, pseudo-terminal and browser tests against fake Pi/session fixtures, plus one local Pi 1.4.0 smoke (no prompt, no model); no conformance claim |
 | Verified initial scratch copies and governed continuation | Source-tree checkpoint, initial-child and two-turn APIs | Synthetic tests, a four-turn real initial-child pilot and real same-session continuation. Fresh Pi processes and tool-free turns; no historical process restore or general effect sandbox |
 | Matched two-turn A/A research workflow | `research/governed-initial-continuation/aa/operate.ts` | One real four-session/eight-request run completed under declared assumptions. Research script, not an `endo` subcommand; engineering hardening remains open |
 | ACP v1 adapter and ACP v2 conformance study | Library APIs | Deterministic tests; v1 also has an opt-in OMP smoke path. No admitted ACP capability and no real v2-agent conformance |

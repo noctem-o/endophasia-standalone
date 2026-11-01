@@ -110,6 +110,13 @@ This change did not touch them. The first two were remediated afterwards, as
 unapproved steer or queue, and the evidence check is bounded and cooperative. Steer and queue text is still stored under
 `<root>/interventions/` before approval, so declined text is retained there.
 
+## Tasks are not part of this contract either
+
+The operator's tasks ([docs/develop-tasks.md](develop-tasks.md)) are a separate, durable model of what they intend to get done. A task may hold
+**explicit, attributed references** to a session (a source, a launch scope, a reference made by the operator in the workbench), but the surface gained
+no task or reference field, no session is joined to a task by an alias, a name or a time, and a reference gives a task no control, resume or
+selection. After another launch a reference is a historical claim, whatever Pi session id the new launch serves.
+
 ## Project and worktree context is not part of this contract
 
 A project is not a session and a worktree is not an agent, so the live workbench's repository, branch and changed files are a **separate

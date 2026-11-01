@@ -17,6 +17,9 @@ import type {
 	ProjectReply,
 } from "./project-wire.ts";
 
+/** The three centre views of a live session: the conversation, the Git changes, and the operator's task. A choice of what is shown, never of what happens. */
+export type ProjectView = "conversation" | "changes" | "task";
+
 export type ProjectProblem = "unpaired" | "stale" | "busy" | "error" | "invalid" | "unreachable";
 
 /**
@@ -51,7 +54,7 @@ export interface ProjectState {
 	failure: ProjectReason | null;
 	selection: FileKey | null;
 	diff: DiffState;
-	view: "conversation" | "changes";
+	view: ProjectView;
 	/** Replies older than these are ignored: a slow answer never overwrites a newer one. */
 	readSeq: number;
 	diffSeq: number;
@@ -78,7 +81,7 @@ export type ProjectAction =
 	| { type: "diff-start"; seq: number; key: FileKey; snapshot: string }
 	| { type: "diff-done"; seq: number; key: FileKey; snapshot: string; reply: ProjectReply }
 	| { type: "select"; key: FileKey | null }
-	| { type: "view"; view: "conversation" | "changes" }
+	| { type: "view"; view: ProjectView }
 	/** The grant is gone or the launch changed: nothing private is kept. */
 	| { type: "reset" };
 

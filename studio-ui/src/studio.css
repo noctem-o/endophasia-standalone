@@ -4190,3 +4190,427 @@ body:has(.develop[data-appearance="field"]) .topbar {
 .arrival-scroll .live-privacy {
 	margin-bottom: 4px;
 }
+
+/* --- the project and its tasks ------------------------------------------------------------------------------------------------- */
+/* The cluster shares the worktree bar's row: the project, the task being worked on, a picker. It describes the operator's own metadata and
+   uses no colour of its own: amber is attention (a directory that does not match), and nothing here is a provenance. */
+.task-cluster {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 10px;
+	min-width: 0;
+	flex: 0 1 auto;
+}
+
+.task-project {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 6px;
+	min-width: 0;
+}
+
+.task-project-name {
+	color: var(--fg-1);
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.task-association {
+	color: var(--fg-3);
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+.task-project[data-tone="attention"] .task-association {
+	color: var(--attention);
+}
+
+.task-picker {
+	position: relative;
+	display: inline-flex;
+	min-width: 0;
+}
+
+.task-picker-button {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0;
+	max-width: min(34ch, 52vw);
+}
+
+.task-picker-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--fg-1);
+}
+
+.task-pop {
+	position: absolute;
+	z-index: 20;
+	top: calc(100% + 4px);
+	left: 0;
+	width: max(22rem, 100%);
+	max-width: min(40rem, 90vw);
+	max-height: min(22rem, 52vh);
+	overflow: auto;
+	background: var(--surface-2);
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius);
+	box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.8);
+	padding: 3px;
+	outline: none;
+}
+
+.task-opt {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 5px 8px;
+	border-radius: var(--radius);
+	cursor: pointer;
+	font-size: 12.5px;
+}
+
+.task-opt[data-active="true"] {
+	background: var(--surface-4);
+}
+
+.task-opt[aria-selected="true"] .task-opt-title {
+	font-weight: 600;
+}
+
+.task-opt {
+	position: relative;
+	padding-left: 18px;
+}
+
+.task-opt[aria-selected="true"]::before {
+	content: "›";
+	position: absolute;
+	left: 7px;
+	color: var(--select);
+}
+
+.task-opt-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.task-opt-new {
+	margin-top: 3px;
+	border-top: 1px solid var(--line-subtle);
+	border-radius: 0 0 var(--radius) var(--radius);
+	color: var(--fg-2);
+}
+
+.task-pop-empty {
+	margin: 4px 8px;
+}
+
+.task-status {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 4px;
+	font-size: 11px;
+	font-family: var(--mono);
+	color: var(--fg-2);
+	white-space: nowrap;
+}
+
+.task-status[data-status="blocked"] {
+	color: var(--attention);
+}
+
+.task-status[data-status="done"] {
+	color: var(--fg-3);
+}
+
+.chip-ref {
+	display: inline-flex;
+	align-items: center;
+	height: 18px;
+	padding: 0 6px;
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius);
+	font-family: var(--mono);
+	font-size: 10.5px;
+	color: var(--fg-2);
+	white-space: nowrap;
+}
+
+.chip-ref[data-relation="historical"] {
+	border-style: dashed;
+	color: var(--fg-3);
+}
+
+/* The Task view: one reading column, scrolled inside its own region like the conversation, with the run strip and the composer docked. */
+.task-scroll {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	overscroll-behavior: contain;
+	scrollbar-gutter: stable;
+	padding: 10px 14px 16px;
+}
+
+.task-scroll > *,
+.task-detail > * {
+	max-width: 70ch;
+}
+
+.task-statusline {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	max-width: 70ch;
+	margin-bottom: 6px;
+}
+
+.task-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 4px 12px;
+	margin-bottom: 4px;
+}
+
+.task-head h2 {
+	margin: 0;
+	font-size: 17px;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+
+.task-block {
+	margin-top: 14px;
+}
+
+.task-block h3,
+.task-form h3 {
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--fg-3);
+	margin: 0 0 6px;
+}
+
+.task-text {
+	margin: 0;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	line-height: 1.5;
+}
+
+.task-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.task-transitions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 8px;
+}
+
+.task-note,
+.task-field input,
+.task-field textarea {
+	background: var(--surface-2);
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius);
+	padding: 4px 8px;
+	font: inherit;
+	color: var(--fg-1);
+}
+
+.task-note {
+	flex: 1 1 14rem;
+	min-width: 0;
+}
+
+.task-form {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.task-field {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	font-size: 12px;
+	color: var(--fg-2);
+}
+
+.task-field textarea {
+	resize: vertical;
+	width: 100%;
+	min-height: 4.2em;
+}
+
+.task-field input {
+	width: 100%;
+}
+
+.task-count[data-over="true"] {
+	color: var(--attention);
+}
+
+.task-refs li {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 5px 0;
+	border-bottom: 1px solid var(--line-subtle);
+}
+
+.task-ref-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 10px;
+}
+
+.task-history {
+	margin-top: 14px;
+}
+
+.task-history-note {
+	color: var(--fg-2);
+}
+
+.task-empty {
+	max-width: 60ch;
+	padding-top: 6px;
+}
+
+.task-empty h3 {
+	margin: 0 0 6px;
+}
+
+.task-command {
+	background: var(--surface-2);
+	border: 1px solid var(--line-subtle);
+	border-radius: var(--radius);
+	padding: 8px 10px;
+	overflow: auto;
+	font-size: 12px;
+	white-space: pre;
+}
+
+.task-foot {
+	margin-top: 18px;
+}
+
+/* On a phone the tabs are one page; the composer is not stuck to the bottom while a task is read or edited. */
+@media (max-width: 1023.98px) {
+	.develop-live[data-view="task"] .composer {
+		position: static;
+	}
+	.task-scroll {
+		overflow: visible;
+	}
+	.task-pop {
+		position: fixed;
+		left: 8px;
+		right: 8px;
+		top: auto;
+		width: auto;
+		max-width: none;
+	}
+}
+
+/* Field: the same bar, quieter. */
+.develop[data-appearance="field"] .task-project-name {
+	color: var(--f-ink-1);
+}
+
+.develop[data-appearance="field"] .task-association,
+.develop[data-appearance="field"] .task-status,
+.develop[data-appearance="field"] .chip-ref {
+	color: var(--f-ink-3);
+}
+
+.develop[data-appearance="field"] .task-project[data-tone="attention"] .task-association,
+.develop[data-appearance="field"] .task-status[data-status="blocked"] {
+	color: var(--f-amber);
+}
+
+.develop[data-appearance="field"] .task-picker-title {
+	color: var(--f-ink-1);
+}
+
+.develop[data-appearance="field"] .task-pop {
+	background: var(--f-slab-2);
+	border-color: var(--f-hair-2);
+	box-shadow: 0 14px 34px -10px rgba(0, 0, 0, 0.9);
+}
+
+.develop[data-appearance="field"] .task-opt[data-active="true"] {
+	background: rgba(206, 218, 238, 0.08);
+}
+
+.develop[data-appearance="field"] .task-note,
+.develop[data-appearance="field"] .task-field input,
+.develop[data-appearance="field"] .task-field textarea,
+.develop[data-appearance="field"] .task-command {
+	background: var(--f-slab);
+	border-color: var(--f-hair-2);
+	color: var(--f-ink-1);
+}
+
+.develop[data-appearance="field"] .task-block h3,
+.develop[data-appearance="field"] .task-form h3 {
+	color: var(--f-ink-3);
+}
+
+.develop[data-appearance="field"] .task-text {
+	color: var(--f-ink-1);
+	max-width: var(--f-measure);
+}
+
+.develop[data-appearance="field"] .task-refs li {
+	border-bottom-color: var(--f-hair);
+}
+
+.task-picker-button {
+	gap: 0.45ch;
+}
+
+/* Field reads in one centred measure, as the conversation does. */
+.develop[data-appearance="field"] .task-scroll > *,
+.develop[data-appearance="field"] .task-statusline,
+.develop[data-appearance="field"] .task-detail > * {
+	max-width: var(--f-measure);
+	margin-inline: auto;
+}
+
+.develop[data-appearance="field"] .task-scroll {
+	padding-inline: 22px;
+}
+
+.btn.primary {
+	border-color: var(--select);
+}
+
+.task-clause {
+	font-weight: 400;
+	letter-spacing: 0;
+	text-transform: none;
+	margin-left: 6px;
+}
+
+.task-head .task-edit {
+	margin-left: auto;
+}

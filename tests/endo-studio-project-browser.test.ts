@@ -666,7 +666,9 @@ suite("nothing here can change the repository, authorise or run anything", () =>
 			.map((u) => u.replace(/^https?:\/\/[^/]+\/[^/]+/, ""))
 			.filter(
 				(u) =>
-					!/^\/api\/v0\/(workbench\/(status|transcript|pair|project|project\/diff)|develop\/|snapshot)/.test(u),
+					!/^\/api\/v0\/(workbench\/(status|transcript|pair|project|project\/diff|workspace)|develop\/|snapshot)/.test(
+						u,
+					),
 			);
 		expect(unexpected).toEqual([]);
 		expect(urls.filter((u) => /project\/diff/.test(u)).every((u) => /snapshot=[0-9a-f]{16}&file=\d+$/.test(u))).toBe(

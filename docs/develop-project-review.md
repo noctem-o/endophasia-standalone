@@ -1,5 +1,9 @@
 # DEVELOP: project and worktree context, and the Changes review
 
+> The operator's own **projects and tasks** (a registered directory, what you intend to get done, your status for it) are a separate,
+> persistent model: [develop-tasks.md](develop-tasks.md). They share this page's bar and the **Task** view beside Conversation and
+> Changes, and nothing else: a worktree is still not an agent, and the Git facts below are still read-only observations.
+
 This is the read-only half of working with a live agent: **where is it working, and what has changed there?** It sits beside the
 conversation in the live DEVELOP workbench (`endo harness attach <root> --control --workbench`). It changes nothing, approves nothing, and
 says nothing about who made a change. The governed controls (prompt, STEER, QUEUE, STOP) are exactly as [docs/develop-workbench.md](develop-workbench.md)
@@ -126,7 +130,7 @@ drops it.
 | Stale | "The worktree changed after HH:MM:SS: this list is out of date and this file was not shown." and a Refresh button; the list is marked **out of date**. |
 | Git failed on a refresh | The broker answered but Git failed, timed out, was missing, said too much or was busy: that confirms nothing, so the last good list and the file being read stay, marked **unconfirmed**, with the reason. Only a fact about the directory (not a repository, bare, refused, out of scope, a partial clone, gone) replaces what is shown. |
 | Session ended / grant gone | The last confirmed facts stay, marked **unconfirmed** (nothing could check), with "what was last read"; a file cannot be read and the page says so. |
-| Unsupported | No Changes tab; "This workbench does not offer worktree reading." |
+| Unsupported | No Changes tab; "This workbench does not offer worktree reading." With no Git context and no project there is no bar at all; with a project (docs/develop-tasks.md) the bar shows only the project and task cluster, with no Git facts. |
 | Diff not showable | Binary, empty (a mode change, noted), too large, conflicted, not a regular file, name not text, cut at the limit, long lines cut short. |
 
 ## 6. Design decision record (Opus design advisory)

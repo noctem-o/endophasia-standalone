@@ -115,6 +115,12 @@ implementation detail and its limitations. The real recordings and studies, with
   - v0 proposals come only from the operator. An external authority provider is a documented seam and is not wired ([the Deadbolt contract proposal](deadbolt-intervention-contract.md)).
   - `endo harness attach --control` serves the desk on an owner-only Unix socket, and `endo steer` talks to it.
   - A recorded session with an intervention replays: the replay re-issues it at the recorded point.
+- **DEVELOP projects and tasks** ([how it works](develop-tasks.md)): `endo project add|list` and `endo task list|add|status`, and the live
+  workbench's **Task** view and project/task bar (`endo harness attach --control --workbench --project <id>`). A project is a directory the
+  operator registered; a task is what they intend to get done, with an operator-owned status; both live in `<root>/develop/tasks.json`,
+  separate from the evidence, written atomically under a lock with per-task revisions. A session reference is explicit, made by the operator
+  in the workbench and scoped to its launch (historical after a restart). The routes sit inside the existing broker, behind the pairing grant;
+  none sends a command, and `endo studio` has none of them.
 - Tests: a deterministic suite with a fake Pi child process and a fake OpenAI-compatible endpoint, plus an opt-in
   acceptance suite against a real installed Pi. The real Pi 1.0.0 recording (mapping.1, a historical specimen pinned by digest) is in
   [`research/pi-conformance/1.0.0/`](../research/pi-conformance/1.0.0/).
@@ -125,7 +131,7 @@ implementation detail and its limitations. The real recordings and studies, with
 browser interface on `127.0.0.1`, behind a private per-launch address, over the observation bridge (`cockpit/`) and a local
 read-only server (`cockpit-http/`) ([design](cockpit.md), [the frontend](cockpit-ui.md)). It shows an Observe workspace: an overview of the recorded window, the
 recorded runtime identity, capability state with its limits, the session timeline in storage order with an evidence-first inspector and each source's condition. It
-writes nothing to the store, attaches to nothing and does not poll. The React Compare workspace discovers recorded Pi/DSH candidates and presents authoritative comparisons, and the read-only Develop workspace browses recorded sessions and their recorded lifecycle and activity (a recording is not a live process; project association is not established by the evidence and is not shown); DEVELOP presents every session in a neutral, versioned surface ([docs/develop-session-surface.md](develop-session-surface.md)) that separates source identity from alias, observed from reported, and recorded from live, and authorises nothing; other modes remain unbuilt.
+writes nothing to the store, attaches to nothing and does not poll. The React Compare workspace discovers recorded Pi/DSH candidates and presents authoritative comparisons, and the read-only Develop workspace browses recorded sessions and their recorded lifecycle and activity (a recording is not a live process; project association is not established by the evidence and is not shown); DEVELOP presents every session in a neutral, versioned surface ([docs/develop-session-surface.md](develop-session-surface.md)) that separates source identity from alias, observed from reported, and recorded from live, and authorises nothing; Develop also has a live, paired workbench for an attached Pi session (conversation, terminal-approved requests, read-only Git change review, optional Field appearance) and the operator's own persistent project and task metadata ([docs/develop-tasks.md](develop-tasks.md)); other modes remain unbuilt.
 Published `0.1.0-alpha.2` contains the first, earlier browser page; the newer React
 Observe, Compare and Develop workspaces are in the source tree, as are the DSH CLI and Compare APIs described above. `endo web`, a native Endophasia binary and
 native packaging are proposed only; the implemented CLI remains `endo studio`.
@@ -194,7 +200,7 @@ artifact contains the earlier browser page.
 
 ## Not yet built
 
-**Not yet built:** proposed DEVELOP, COGNITION, VERIFY and EVOLVE browser workspaces; a
+**Not yet built:** the proposed COGNITION, VERIFY and EVOLVE browser workspaces (DEVELOP is built for recorded sessions and for one attached Pi session; it does not yet start harnesses, open arbitrary projects, schedule work or coordinate agents); a
 model-internal OBSERVE view, observation providers and typed Observe scenes; the WebGPU browser renderer; an optional Pi
 extension for active-tool control; model-originated steering proposals and an external authority provider; any live provider
 integration wired into a command; the full trajectory / experience laboratory; RL training-provider integration;

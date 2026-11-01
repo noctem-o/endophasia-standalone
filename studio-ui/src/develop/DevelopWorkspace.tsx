@@ -17,6 +17,7 @@ import { Panel } from "../ui/Panel.tsx";
 import { Note } from "../ui/text.tsx";
 import { useNarrow } from "../ui/use-narrow.ts";
 import type { ProjectApi } from "../use-project.ts";
+import type { WorkspaceApi } from "../use-workspace.ts";
 import { Activity } from "./Activity.tsx";
 import { projectView } from "./Changes.tsx";
 import { Arrival, Beacon, FieldLayer, FieldLegend, useReducedMotion } from "./Field.tsx";
@@ -88,6 +89,7 @@ export function DevelopWorkspace({
 	observeBlocked,
 	workbench,
 	project,
+	workspace,
 	reasoning,
 	onObserveLive,
 	appearance = "instrument",
@@ -102,6 +104,8 @@ export function DevelopWorkspace({
 	onPause?(paused: boolean): void;
 	/** The worktree context of the live launch (read-only Git, read when asked). */
 	project: ProjectApi;
+	/** The operator's project and tasks (metadata; choosing a task sends nothing and changes nothing else). */
+	workspace: WorkspaceApi;
 	/** How model-provided reasoning is shown (display only, memory only). */
 	reasoning: ReasoningView;
 	/** The workbench (the broker's live view), or a state saying the server has none. */
@@ -150,7 +154,7 @@ export function DevelopWorkspace({
 			if (
 				workbench.state.availability === "available" &&
 				workbench.state.view === "live" &&
-				project.state.view === "changes"
+				project.state.view !== "conversation"
 			)
 				return;
 			// Escape inside a text field belongs to the field: a draft is not abandoned by a stage change.
@@ -203,7 +207,7 @@ export function DevelopWorkspace({
 			if (target !== null && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable))
 				return;
 			const reading = project.state.view === "changes";
-			if (event.key === "Escape" && reading) {
+			if (event.key === "Escape" && project.state.view !== "conversation") {
 				project.setView("conversation");
 				document.getElementById("develop-tab-conversation")?.focus({ preventScroll: true });
 				return;
@@ -305,6 +309,7 @@ export function DevelopWorkspace({
 		<LiveContext
 			wb={workbench}
 			project={chosen}
+			workspace={workspace}
 			onObserve={() =>
 				onObserveLive(workbench.state.status?.session ?? null, workbench.state.status?.attachment ?? null)
 			}
@@ -339,9 +344,11 @@ export function DevelopWorkspace({
 	const surface: FieldSurface = liveMode
 		? project.state.view === "changes"
 			? "changes"
-			: liveEmpty
-				? "arrival"
-				: "conversation"
+			: project.state.view === "task"
+				? "conversation"
+				: liveEmpty
+					? "arrival"
+					: "conversation"
 		: detail !== null
 			? "recording"
 			: "arrival";
@@ -455,6 +462,7 @@ export function DevelopWorkspace({
 							<LiveConversation
 								wb={workbench}
 								project={project}
+								workspace={workspace}
 								reasoning={reasoning}
 								arrival={arrival}
 								beacon={beacon}
@@ -487,6 +495,7 @@ export function DevelopWorkspace({
 						<LiveConversation
 							wb={workbench}
 							project={project}
+							workspace={workspace}
 							reasoning={reasoning}
 							arrival={arrival}
 							beacon={beacon}

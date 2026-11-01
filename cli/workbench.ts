@@ -16,6 +16,7 @@ import type { PiInterventionDeskV0 } from "../adapters/pi/intervention.ts";
 import { type WorkbenchApproverV0, WorkbenchBrokerV0 } from "../adapters/pi/workbench.ts";
 import { cockpitAliasesV0 } from "../cockpit/index.ts";
 import { launchEndoCockpitV0 } from "../cockpit-http/host.ts";
+import { DevelopTasksStoreV0 } from "../storage/develop-tasks.ts";
 import { loadOrCreateEndoDigestKeyV0 } from "../storage/digest-key.ts";
 import { endoStudioUiDirectoryV0 } from "./studio.ts";
 
@@ -72,7 +73,10 @@ export async function startWorkbenchV0(
 	session: PiSessionAttachmentV0,
 	desk: PiInterventionDeskV0,
 	/** The working directory Pi was launched in: the one place the project context reads (read-only Git), never a value from the page. */
-	options: { cwd: string },
+	options: {
+		cwd: string /** A registered project (`endo project add`) the operator named for this launch. */;
+		projectId?: string;
+	},
 ): Promise<WorkbenchHandleV0> {
 	requireWorkbenchTerminalV0();
 	const uiDirectory = endoStudioUiDirectoryV0();
@@ -148,6 +152,15 @@ export async function startWorkbenchV0(
 		approver,
 		interventions: desk,
 		project: new GitProjectInspectorV0({ cwd: options.cwd }),
+		...(options.projectId === undefined
+			? {}
+			: {
+					tasks: {
+						store: new DevelopTasksStoreV0(session.owner.options.root),
+						projectId: options.projectId,
+						launchDirectory: options.cwd,
+					},
+				}),
 		aliasOf: (id) => aliasOf(id),
 	});
 	let launched: Awaited<ReturnType<typeof launchEndoCockpitV0>>;
@@ -193,6 +206,18 @@ export async function startWorkbenchV0(
 	);
 	write(`workbench: ${launched.server.baseUrl}/\n`);
 	showCode();
+	// Say what the page will be told about the project, in plain words, before the operator looks at it.
+	const workspace = broker.workspaceView();
+	if (workspace !== null)
+		write(
+			workspace.state === "ready" && workspace.project !== null
+				? workspace.project.launch === "same"
+					? `workbench: project "${workspace.project.name}" (${workspace.project.id}): this directory is the registered one; tasks can be changed from the page.\n`
+					: `workbench: project "${workspace.project.name}" (${workspace.project.id}): this directory is NOT the registered one (${workspace.project.path}); its tasks are shown read-only and nothing is changed.\n`
+				: workspace.state === "unknown-project"
+					? "workbench: --project names no project in this store (endo project list); the page will show no tasks.\n"
+					: `workbench: the task file cannot be used (${workspace.reason ?? "unreadable"}); it was not changed and the page will show no tasks.\n`,
+		);
 	return {
 		address: `${launched.server.baseUrl}/`,
 		broker,
