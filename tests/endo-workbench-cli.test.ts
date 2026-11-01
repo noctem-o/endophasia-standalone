@@ -2,7 +2,7 @@
 // test that matters most for the authority boundary: the prompt is requested over HTTP, and it is sent only after the operator TYPES
 // the exact phrase on the process's controlling terminal. Also the refusals: no terminal, no --control.
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -509,3 +509,137 @@ describe.runIf(hasScript && process.platform === "linux")(
 		}, 180_000);
 	},
 );
+
+describe.runIf(hasScript && process.platform === "linux")(
+	"endo harness attach --control --workbench --project under a pseudo-terminal",
+	() => {
+		const endo = (args: string[], env: NodeJS.ProcessEnv) =>
+			spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env });
+
+		async function launch(options: {
+			root: string;
+			cwd: string;
+			project: string;
+			piBin: string;
+			env: NodeJS.ProcessEnv;
+		}) {
+			const pty = new Pty(
+				`${process.execPath} ${CLI} harness attach ${options.root} --pi ${options.piBin} --cwd ${options.cwd} --control --workbench --project ${options.project}`,
+				options.env,
+			);
+			const address = (await pty.waitFor(/workbench: (http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]+\/)/))[1]!;
+			const code = (await pty.waitFor(/pairing code ([A-Z0-9]{4}-[A-Z0-9]{4})/))[1]!;
+			const origin = new URL(address).origin;
+			const api = `${address}api/v0/workbench/`;
+			const call = async (method: "GET" | "POST", route: string, body?: unknown, grant?: string) => {
+				const response = await fetch(`${api}${route}`, {
+					method,
+					headers: {
+						...(method === "POST" ? { Origin: origin, "Content-Type": "application/json" } : {}),
+						...(grant ? { "X-Endo-Grant": grant } : {}),
+					},
+					...(method === "POST" ? { body: JSON.stringify(body) } : {}),
+				});
+				return { status: response.status, body: (await response.json()) as Record<string, any> };
+			};
+			const grant = ((await call("POST", "pair", { code })).body as { grant: string }).grant;
+			return { pty, call, grant };
+		}
+
+		it("registers a project, serves its tasks to a paired page, changes them without sending anything, and shows them read-only from another directory", async () => {
+			const install = installFakePi("1.0.0");
+			cleanup.push(() => install.remove());
+			const root = temp("endo-wbcli-proj-root-");
+			const cwd = realpathSyncTemp(temp("endo-wbcli-proj-cwd-"));
+			const elsewhere = realpathSyncTemp(temp("endo-wbcli-proj-elsewhere-"));
+			const xdg = temp("endo-wbcli-proj-xdg-");
+			const env = { ...process.env, XDG_DATA_HOME: xdg, ...fakePiEnv({ FAKE_PI_STEP_MS: "30" }) };
+			const added = endo(["project", "add", root, "--name", "Pty project", "--path", cwd], env);
+			expect(added.status, added.stderr).toBe(0);
+			const project = (JSON.parse(added.stdout) as { project: { id: string } }).project.id;
+			const common = { root, project, piBin: install.bin, env };
+
+			// Launched in the registered directory: the terminal says so, and a paired page can change tasks.
+			const first = await launch({ ...common, cwd });
+			await first.pty.waitFor(
+				/project "Pty project" \(endo\.project\.[0-9a-f]{32}\): this directory is the registered one/,
+			);
+			expect((await first.call("GET", "workspace")).status).toBe(401);
+			const view = await first.call("GET", "workspace", undefined, first.grant);
+			expect(view.body).toMatchObject({
+				state: "ready",
+				writable: true,
+				tasks: [],
+				project: { name: "Pty project", launch: "same" },
+			});
+			const created = await first.call(
+				"POST",
+				"workspace/tasks/create",
+				{ title: "From the page", acceptance: "it persists" },
+				first.grant,
+			);
+			expect(created.status).toBe(200);
+			const task = created.body.tasks[0] as { id: string; revision: number };
+			const moved = await first.call(
+				"POST",
+				"workspace/tasks/status",
+				{ taskId: task.id, expectedRevision: task.revision, to: "in-progress", note: "page" },
+				first.grant,
+			);
+			expect(moved.body.tasks[0]).toMatchObject({ status: "in-progress" });
+			const linked = await first.call(
+				"POST",
+				"workspace/tasks/link-session",
+				{ taskId: task.id, expectedRevision: 1 },
+				first.grant,
+			);
+			expect(linked.body.tasks[0].sessions[0]).toMatchObject({
+				relation: "current",
+				source: "pi-live",
+				linkedBy: "operator",
+			});
+			// The task routes reach no command: the terminal asked for no approval, and Pi was sent no prompt.
+			expect(first.pty.output).not.toContain("WORKBENCH: approve");
+			expect((await first.call("GET", "status")).body.command).toBeNull();
+			first.pty.child.stdin.write("\x03");
+			expect(await first.pty.exit).toBe(0);
+
+			// The tasks outlive the process; the CLI reads what the page wrote.
+			const listed = endo(["task", "list", root, "--project", project], env);
+			expect(JSON.parse(listed.stdout).tasks).toMatchObject([
+				{ title: "From the page", status: "in-progress", sessionReferences: 1 },
+			]);
+
+			// Launched elsewhere with the same project: the terminal says so, the page can read and cannot change, and the earlier link is historical.
+			const second = await launch({ ...common, cwd: elsewhere });
+			await second.pty.waitFor(/this directory is NOT the registered one/);
+			const readOnly = await second.call("GET", "workspace", undefined, second.grant);
+			expect(readOnly.body).toMatchObject({
+				writable: false,
+				readOnlyReason: "project-mismatch",
+				project: { launch: "different" },
+			});
+			expect(readOnly.body.tasks[0].sessions[0].relation).toBe("historical");
+			expect((await second.call("POST", "workspace/tasks/create", { title: "nope" }, second.grant)).status).toBe(
+				409,
+			);
+			second.pty.child.stdin.write("\x03");
+			expect(await second.pty.exit).toBe(0);
+			expect(JSON.parse(endo(["task", "list", root, "--project", project], env).stdout).tasks).toHaveLength(1);
+
+			// And an id the store does not know is said at the terminal, with nothing served.
+			const unknown = await launch({ ...common, cwd, project: `endo.project.${"0".repeat(32)}` });
+			await unknown.pty.waitFor(/names no project in this store/);
+			expect((await unknown.call("GET", "workspace", undefined, unknown.grant)).body).toMatchObject({
+				state: "unknown-project",
+				tasks: [],
+			});
+			unknown.pty.child.stdin.write("\x03");
+			expect(await unknown.pty.exit).toBe(0);
+		}, 180_000);
+	},
+);
+
+function realpathSyncTemp(path: string): string {
+	return realpathSync(path);
+}

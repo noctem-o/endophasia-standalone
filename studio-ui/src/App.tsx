@@ -20,6 +20,7 @@ import { useDevelop } from "./use-develop.ts";
 import { useObserve } from "./use-observe.ts";
 import { useProject } from "./use-project.ts";
 import { useWorkbench } from "./use-workbench.ts";
+import { useWorkspace } from "./use-workspace.ts";
 
 // The placeholder workspaces are loaded on demand, so the build's handling of a dynamic import (a separate file under the same
 // capability-prefixed assets path) is exercised by every browser run.
@@ -48,6 +49,9 @@ export function App(): ReactElement {
 	// The worktree context belongs to the live launch, so it is held here beside the workbench's state: switching workspaces does not drop it,
 	// and losing the grant or changing launch does.
 	const project = useProject(workbench.state.grant, workbench.state.status?.launchId ?? null, workspace === "develop");
+	// The operator's project and tasks: metadata, held beside the workbench for the same reason as the worktree context. Choosing a task here
+	// sends nothing and changes no session, worktree or status.
+	const tasks = useWorkspace(workbench.state.grant, workbench.state.status?.launchId ?? null, workspace === "develop");
 	// How model-provided reasoning is shown, in both appearances: folded (the default) or shown, and the traces opened or folded by hand.
 	// Display only, memory only: it never changes the model's thinking setting, and a reload is the default again.
 	const reasoning = useReasoningView(workbench.state.status?.launchId ?? null);
@@ -252,6 +256,7 @@ export function App(): ReactElement {
 							observeBlocked={observeBlocked}
 							workbench={workbench}
 							project={project}
+							workspace={tasks}
 							reasoning={reasoning}
 							onObserveLive={showObserveLive}
 							appearance={appearance}

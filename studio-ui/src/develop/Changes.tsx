@@ -2,7 +2,7 @@
 // Everything here is a description of a Git working tree that the broker read at a stated time. None of it is a session fact, none of it
 // says who made a change, and none of it can change anything: there is no stage, revert or commit anywhere in this file, and a path is
 // never typed or built: a file is chosen from the list the broker returned and read by its position in that list.
-import { type ReactElement, useEffect, useRef } from "react";
+import { type ReactElement, type ReactNode, useEffect, useRef } from "react";
 import {
 	AREA_WORDS,
 	AUTHORSHIP_WORDS,
@@ -52,14 +52,22 @@ export function WorktreeBar({
 	api,
 	paired,
 	connected,
+	leading,
 }: {
 	api: ProjectApi;
 	paired: boolean;
 	connected: boolean;
+	/** The project and task cluster that shares this row (develop/Tasks.tsx). It is not a Git fact and is not read from Git. */
+	leading?: ReactNode;
 }): ReactElement | null {
 	const view = projectView(api, paired);
 	const { state } = api;
-	if (view.kind === "unsupported") return null;
+	if (view.kind === "unsupported")
+		return leading == null ? null : (
+			<div className="worktree-bar" data-testid="project-header" data-state="unsupported" data-current="no">
+				{leading}
+			</div>
+		);
 	const project = state.project;
 	const current = project !== null && state.current && connected && paired;
 	const reading = state.reading;
@@ -159,6 +167,7 @@ export function WorktreeBar({
 			data-current={current ? "yes" : "no"}
 			title="The directory Pi was launched in (configured), read with Git. A worktree is a place, not a session."
 		>
+			{leading}
 			<span className="wt-main">{body}</span>
 			<span className="wt-tail">
 				{project === null ? null : (

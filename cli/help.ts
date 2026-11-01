@@ -25,7 +25,7 @@ export function endoVersionV0(from: string = dirname(fileURLToPath(import.meta.u
 }
 
 export const ENDO_USAGE_LINE_V0 =
-	"usage: endo <doctor|status|events|ingest|ledger|artifacts|harness|dsh|trajectory|digest-key|studio|proxy|replay|experiment|steer> ...";
+	"usage: endo <doctor|status|events|ingest|ledger|artifacts|harness|dsh|trajectory|digest-key|studio|proxy|replay|experiment|steer|project|task> ...";
 
 export function endoHelpV0(): string {
 	return `endo — Endophasia, an experimental research instrument (alpha; not a stable product).
@@ -63,6 +63,11 @@ Commands that write to a store:
                                      Operational/argument failures exit 1 on stderr with no report. Creates the installation
                                      key if absent; writes the destination only when appending. One writer per store.
   harness identify|check <root> ...  observe a Pi executable (local protocol checks; no model call)
+  project add [<root> | --root dir] --name <name> --path <directory>
+                                     register a project (an explicit statement that this directory is this project) for DEVELOP;
+                                     writes <root>/develop/tasks.json, never the event store. Nothing runs and nothing is opened.
+  project list | task list|add|status ...
+                                     the operator's project and task metadata (docs/develop-tasks.md)
   steer <propose|authorize|apply|status|close> <root> ...
 
 Commands that run a prompted agent session or an experiment:

@@ -24,6 +24,7 @@ import { piAssessmentV0, renderPiAssessmentV0 } from "../adapters/pi/assessment.
 import { type PiAttachmentOptionsV0, PiAttachmentV0 } from "../adapters/pi/attachment.ts";
 import { PiInterventionDeskV0 } from "../adapters/pi/intervention.ts";
 import { piVersionStandingV0 } from "../adapters/pi/version.ts";
+import { ENDO_PROJECT_ID_PATTERN_V0 } from "../protocol/develop-tasks.ts";
 import type { EndoHarnessNotificationV0 } from "../protocol/harness.ts";
 import { canonicalEndoJsonV0 } from "../runtime/contracts/canonical-json.ts";
 import { reduceEndoSessionOverviewV0 } from "../runtime/contracts/session-overview.ts";
@@ -50,10 +51,11 @@ const VALUE_FLAGS = new Set([
 	"--cwd",
 	"--prompt",
 	"--wait",
+	"--project",
 ]);
 const SWITCHES = new Set(["--force", "--authorize-live-study", "--control", "--workbench"]);
 
-function parse(argv: readonly string[], usage: string): ParsedV0 {
+function parse(argv: readonly string[], usage: string, allowProject = false): ParsedV0 {
 	const taken = takeEndoRootV0(argv, 0, VALUE_FLAGS);
 	const { root, rest: args } = taken;
 	const flags = new Map<string, string>();
@@ -65,7 +67,7 @@ function parse(argv: readonly string[], usage: string): ParsedV0 {
 			continue;
 		}
 		if (!flag.startsWith("--")) throw new TypeError(usage);
-		if (!VALUE_FLAGS.has(flag)) throw new TypeError(`unknown flag ${flag}`);
+		if (!VALUE_FLAGS.has(flag) || (flag === "--project" && !allowProject)) throw new TypeError(`unknown flag ${flag}`);
 		const value = args.shift();
 		if (value === undefined) throw new TypeError(`the flag ${flag} needs a value`);
 		flags.set(flag, value);
@@ -213,13 +215,21 @@ function summarize(
 export async function harnessAttachCommand(argv: readonly string[]): Promise<void> {
 	const parsed = parse(
 		argv,
-		"usage: endo harness attach [<root> | --root dir] [--pi path] [--prompt text] [--wait ms] [--control [--workbench]]",
+		"usage: endo harness attach [<root> | --root dir] [--pi path] [--prompt text] [--wait ms] [--control [--workbench [--project id]]]",
+		true,
 	);
 	const wait = parsed.flags.has("--wait") ? Number(parsed.flags.get("--wait")) : 120_000;
 	if (!Number.isSafeInteger(wait) || wait < 0) throw new TypeError("--wait must be a non-negative integer");
 	// The workbench is checked before anything runs: not even Pi is identified without a terminal to approve on.
 	if (parsed.switches.has("--workbench") && !parsed.switches.has("--control"))
 		throw new TypeError("--workbench is part of the control path: use it with --control");
+	// A project is named, never inferred: --project selects one the operator registered (`endo project add`) for this workbench. It sets no
+	// directory (that stays --cwd or the process's own) and grants nothing; it only says which tasks the page may show.
+	const project = parsed.flags.get("--project");
+	if (project !== undefined && !parsed.switches.has("--workbench"))
+		throw new TypeError("--project belongs to the workbench: use it with --control --workbench");
+	if (project !== undefined && !ENDO_PROJECT_ID_PATTERN_V0.test(project))
+		throw new TypeError("--project is a project id (endo.project.…) from `endo project add` or `endo project list`");
 	if (parsed.switches.has("--workbench")) requireWorkbenchTerminalV0();
 	const pi = new PiAttachmentV0(options(parsed));
 	const identified = await pi.identify();
@@ -271,6 +281,7 @@ async function attachWithControl(
 			workbench = await startWorkbenchV0(session, desk, {
 				// The directory Pi was actually started in: one source, the attachment's own.
 				cwd: resolve(session.owner.options.cwd ?? process.cwd()),
+				...(parsed.flags.has("--project") ? { projectId: parsed.flags.get("--project") as string } : {}),
 			});
 		process.stderr.write(`serving control at ${server.path} (endo steer … ${parsed.root})\n`);
 		const prompt = parsed.flags.get("--prompt");

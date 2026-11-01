@@ -11,6 +11,7 @@ import {
 	initialProject,
 	neighbour,
 	type ProjectState,
+	type ProjectView,
 	reduceProject,
 } from "./model/project.ts";
 import type { Project } from "./model/project-wire.ts";
@@ -21,7 +22,7 @@ export interface ProjectApi {
 	select(key: FileKey): void;
 	/** Read the next or previous file in the list's order. */
 	step(by: 1 | -1): void;
-	setView(view: "conversation" | "changes"): void;
+	setView(view: ProjectView): void;
 }
 
 export function useProject(grant: string | null, launchId: string | null, active: boolean): ProjectApi {

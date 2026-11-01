@@ -48,9 +48,11 @@ import { Note } from "../ui/text.tsx";
 import { useNarrow } from "../ui/use-narrow.ts";
 import type { ProjectApi } from "../use-project.ts";
 import type { useWorkbench } from "../use-workbench.ts";
+import type { WorkspaceApi } from "../use-workspace.ts";
 import { ChangesList, DiffView, projectView, WorktreeBar } from "./Changes.tsx";
 import { ReasoningBlock, ReasoningPreference, type ReasoningView, ReflowContext } from "./Reasoning.tsx";
 import { SurfaceTag, SurfaceView } from "./Surface.tsx";
+import { ProjectBlock, TaskCluster, TaskPanel } from "./Tasks.tsx";
 
 export type Workbench = ReturnType<typeof useWorkbench>;
 const clock = (at: Date | null): string => (at === null ? "" : at.toLocaleTimeString([], { hour12: false }));
@@ -812,11 +814,13 @@ function LiveScroll({
 const VIEWS = [
 	{ id: "conversation", label: "Conversation" },
 	{ id: "changes", label: "Changes" },
+	{ id: "task", label: "Task" },
 ] as const;
 
 export function LiveConversation({
 	wb,
 	project,
+	workspace,
 	reasoning,
 	leading,
 	arrival,
@@ -824,6 +828,8 @@ export function LiveConversation({
 }: {
 	wb: Workbench;
 	project: ProjectApi;
+	/** The operator's project and tasks: metadata beside the conversation, never part of it, and never a way to send anything. */
+	workspace: WorkspaceApi;
 	/** How model-provided reasoning is shown: the operator's choice and the traces opened or folded by hand. Memory only. */
 	reasoning: ReasoningView;
 	/** Shown at the start of the header: the sessions toggle at the widths where the list is a drawer. */
@@ -848,12 +854,20 @@ export function LiveConversation({
 	// Something arrived in the conversation while the operator was reading changes: the tab says so (an agent's question must not go unseen).
 	const seen = useRef(signature);
 	if (view === "conversation") seen.current = signature;
-	const unseen = view === "changes" && signature !== seen.current;
-	// Left and right arrows move between the two views, as on any tab list; the view is the operator's choice and is never switched for them.
+	const unseen = view !== "conversation" && signature !== seen.current;
+	const offered = VIEWS.filter((v) => v.id !== "changes" || changesOffered);
+	// Left and right arrows move between the views, as on any tab list; the view is the operator's choice and is never switched for them.
 	const tabKeys = (event: KeyboardEvent<HTMLDivElement>) => {
-		if (!changesOffered || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+		if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
 		event.preventDefault();
-		const to = event.key === "Home" || event.key === "ArrowLeft" ? "conversation" : "changes";
+		const at = offered.findIndex((v) => v.id === view);
+		const next =
+			event.key === "Home"
+				? 0
+				: event.key === "End"
+					? offered.length - 1
+					: Math.max(0, Math.min(offered.length - 1, at + (event.key === "ArrowRight" ? 1 : -1)));
+		const to = offered[next]?.id ?? "conversation";
 		project.setView(to);
 		document.getElementById(`develop-tab-${to}`)?.focus();
 	};
@@ -868,7 +882,7 @@ export function LiveConversation({
 				<header className="panel-head live-head">
 					{leading}
 					<div className="view-tabs" role="tablist" aria-label="Conversation or changes" onKeyDown={tabKeys}>
-						{VIEWS.filter((v) => v.id === "conversation" || changesOffered).map((v) => (
+						{offered.map((v) => (
 							<button
 								key={v.id}
 								type="button"
@@ -917,7 +931,21 @@ export function LiveConversation({
 						</button>
 					</div>
 				</header>
-				<WorktreeBar api={project} paired={paired} connected={connected} />
+				<WorktreeBar
+					api={project}
+					paired={paired}
+					connected={connected}
+					// With no Git context AND no project, there is nothing for the bar to say (as before): no bar at all.
+					leading={
+						workspace.state.availability === "absent" && !changesOffered ? null : (
+							<TaskCluster
+								workspace={workspace}
+								git={project.state.project}
+								onDetails={() => project.setView("task")}
+							/>
+						)
+					}
+				/>
 				<div className="run-strip" data-testid="run-strip" data-connection={connection}>
 					<ConnectionGlyph state={connection} />
 					<span
@@ -984,6 +1012,15 @@ export function LiveConversation({
 						/>
 					</div>
 				) : null}
+				<div
+					className="live-view"
+					id="develop-view-task"
+					role="tabpanel"
+					aria-labelledby="develop-tab-task"
+					hidden={view !== "task"}
+				>
+					<TaskPanel workspace={workspace} git={project.state.project} connected={connected} />
+				</div>
 				{state.grant === null ? <Pairing wb={wb} /> : <Composer wb={wb} />}
 			</section>
 		</PanelBoundary>
@@ -994,10 +1031,12 @@ export function LiveConversation({
 export function LiveContext({
 	wb,
 	project,
+	workspace,
 	onObserve,
 }: {
 	wb: Workbench;
 	project: ProjectApi;
+	workspace: WorkspaceApi;
 	onObserve(): void;
 }): ReactElement {
 	const { status } = wb.state;
@@ -1015,6 +1054,7 @@ export function LiveContext({
 			resetKey={status?.launchId ?? "none"}
 		>
 			<ChangesList api={project} paired={paired} connected={connected} />
+			<ProjectBlock workspace={workspace} git={project.state.project} />
 			<section className="block" data-testid="context-worktree">
 				<h3>Worktree</h3>
 				{repo === null ? (

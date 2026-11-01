@@ -30,6 +30,19 @@
   [docs/harness-upgrades.md](docs/harness-upgrades.md#changing-the-identity-basis).
 
 ### Added
+- **DEVELOP projects and tasks: a persistent workspace beside the live conversation.** The operator registers a project (`endo project add
+  --name <n> --path <dir>`: an explicit statement that this directory is this project; nothing is opened or run), names it for a launch
+  (`endo harness attach … --control --workbench --project <id>`), and writes **tasks** under it: a title, an optional description and
+  acceptance criteria, and a status the operator alone moves (`open → in-progress → review → done`, with `blocked` and an explicit
+  reopening; an agent finishing a run never changes it). The workbench gains a project/task cluster in the worktree bar, a task picker
+  (`T`), and a **Task** view beside Conversation and Changes with the run strip, STOP and the unsent draft docked under all three.
+  `endo task list|add|status` read and change tasks without a workbench. Tasks live in `<root>/develop/tasks.json` (`endo.develop-tasks.v0`),
+  separate from the evidence: written atomically under a lock with per-task revisions (a stale edit is refused, never merged), bounded,
+  owner-only, and unreadable (reported, never overwritten) when malformed or reached through a link. A **session reference** is explicit,
+  built by the broker from its own state, scoped to its launch, and historical after a restart. The routes are inside the existing broker
+  behind the pairing grant (`GET workspace`, `POST workspace/tasks/…`), add no command, and are absent from `endo studio`. A launch in a directory
+  other than the registered one shows the tasks read-only. See [docs/develop-tasks.md](docs/develop-tasks.md). Tested against the fake Pi and fake session
+  fixtures, plus one local smoke with the installed Pi 1.4.0 (a task created and the session linked; no prompt, no model, no approval); not a conformance claim.
 - **Upstream-change assessment in `endo harness status`:** after a harness changes, status explains it from the recorded
   registry, read-only and without examining the executable: the previous and current runtime, which identity facts differ,
   each capability's standing before and now with every dependency that changed (identity, confidence, adapter, mapping,

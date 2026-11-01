@@ -16,6 +16,8 @@
 //   POST intervention/discard {proposalId}   withdraw it before it is approved.
 //   GET  project                the launch directory's Git context (repository, worktree, branch, linked worktrees, changed files). Needs the grant. READ ONLY.
 //   GET  project/diff?snapshot=&file=   one changed file's diff, for an entry of that snapshot. Needs the grant. READ ONLY.
+//   GET  workspace              the operator's registered project and its tasks (metadata they wrote), and POST workspace/tasks/<create|update|status|
+//                               select|link-session|unlink-session>: see workbench-tasks.ts. Needs the grant. METADATA ONLY: none of them sends a command.
 //   POST intervention/check {proposalId}     start a bounded check of whether the capture shows a STEER or QUEUE was consumed; the answer is read
 //                                             back from the request's view. Needs the grant.
 //
@@ -33,6 +35,7 @@
 // or write other than those two record chains.
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { ENDO_DEVELOP_WORKSPACE_ABSENT_V0 } from "../../protocol/develop-tasks.ts";
 import type { EndoEventV0 } from "../../protocol/event.ts";
 import type { JsonValueV0 } from "../../protocol/primitives.ts";
 import {
@@ -50,6 +53,7 @@ import type {
 } from "../../protocol/workbench-project.ts";
 import { canonicalEndoJsonV0 } from "../../runtime/contracts/canonical-json.ts";
 import type { EndoDigestKeyV0 } from "../../runtime/contracts/keyed-digest.ts";
+import type { DevelopTasksStoreV0 } from "../../storage/develop-tasks.ts";
 import type { RpcEventV0 } from "../rpc-jsonl/rpc-connection.ts";
 import { LIVE_TRANSCRIPT_SCHEMA_V1, LiveTranscriptV0 } from "./live-transcript.ts";
 import { PiRpcRefusalV0 } from "./rpc.ts";
@@ -58,6 +62,7 @@ import {
 	type WorkbenchEvidenceBudgetV0,
 	WorkbenchInterventionsV0,
 } from "./workbench-interventions.ts";
+import { WorkbenchTasksV0 } from "./workbench-tasks.ts";
 
 export const ENDO_WORKBENCH_STATUS_SCHEMA_V0 = "endo.workbench-status.v0";
 
@@ -121,6 +126,11 @@ export interface WorkbenchOptionsV0 {
 	interventions?: WorkbenchDeskV0;
 	/** Read-only project context (the launch directory's Git state). Without it the project routes do not exist. */
 	project?: WorkbenchProjectSourceV0;
+	/**
+	 * The operator's project and tasks (adapters/pi/workbench-tasks.ts): the store, the project the operator named for this launch with `--project`,
+	 * and the directory the process was launched in. Without it the workspace routes answer one constant. It adds no command.
+	 */
+	tasks?: { store: DevelopTasksStoreV0; projectId: string; launchDirectory: string };
 	/** The presented alias of a session id (the cockpit's own), so the page can link the live session to its recording. */
 	aliasOf?: (sessionId: string) => string;
 	now?: () => number;
@@ -197,6 +207,7 @@ export class WorkbenchBrokerV0 implements EndoCockpitWorkbenchV0 {
 	#grant: { token: string; expiresAtMs: number } | null = null;
 	#command: Proposal | null = null;
 	readonly #interventions: WorkbenchInterventionsV0 | null;
+	readonly #tasks: WorkbenchTasksV0 | null;
 	/** The desk's final finish began: no prompt is offered or sent from here on, and one waiting for the terminal is withdrawn. */
 	#closing = false;
 	#disposed = false;
@@ -230,6 +241,21 @@ export class WorkbenchBrokerV0 implements EndoCockpitWorkbenchV0 {
 						...(options.yieldToLoop === undefined ? {} : { yieldToLoop: options.yieldToLoop }),
 						...(options.evidenceBudget === undefined ? {} : { evidenceBudget: options.evidenceBudget }),
 					});
+		this.#tasks =
+			options.tasks === undefined
+				? null
+				: new WorkbenchTasksV0({
+						...options.tasks,
+						launchId: this.launchId,
+						attachment: options.attachment,
+						connected: () => {
+							const s = options.session;
+							return !this.#disposed && !this.#ended && s.live && s.piSessionId !== null
+								? { sessionId: `endo.session.pi.${s.piSessionId}` }
+								: null;
+						},
+						...(options.aliasOf === undefined ? {} : { aliasOf: options.aliasOf }),
+					});
 		// The desk records consequences when it finishes: a prompt still waiting for the terminal is withdrawn then too.
 		options.interventions?.onFinishing(() => this.beginClose());
 		options.session.onLiveEvent = (event) => {
@@ -239,6 +265,11 @@ export class WorkbenchBrokerV0 implements EndoCockpitWorkbenchV0 {
 	}
 
 	// --- pairing and grant ---------------------------------------------------------------------------------------------------
+
+	/** What the page would be told of the project and tasks now (null without `--project`). For the terminal's own account at start. */
+	workspaceView() {
+		return this.#tasks?.view() ?? null;
+	}
 
 	/** A new one-time pairing code, replacing any earlier one. It is shown only on the attached terminal. */
 	issuePairingCode(): { code: string; expiresAtMs: number } {
@@ -391,6 +422,14 @@ export class WorkbenchBrokerV0 implements EndoCockpitWorkbenchV0 {
 			if (request.query !== "" && match === null) return refuse(400, "bad-request");
 			const view = this.transcript.view(match === null ? 0 : Number(match[1]));
 			return reply(200, { schemaVersion: LIVE_TRANSCRIPT_SCHEMA_V1, launchId: this.launchId, ...view });
+		}
+		// The operator's tasks: metadata only, behind the grant. Without a registered project the workbench says so with one constant answer.
+		if (a === "workspace") {
+			if (this.#tasks === null)
+				return b === undefined && request.method === "GET" && request.query === ""
+					? reply(200, ENDO_DEVELOP_WORKSPACE_ABSENT_V0)
+					: refuse(404, "not-found");
+			return this.#tasks.handle(request.route, request.method, request.query, request.body);
 		}
 		// A workbench with no project context says so with one constant answer (as the read-only server does for status), so a page can ask
 		// quietly: a 404 would be logged by every browser as a failed request.

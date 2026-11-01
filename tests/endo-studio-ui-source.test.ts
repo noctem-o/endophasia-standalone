@@ -48,6 +48,10 @@ describe("the frontend's source", () => {
 				"model/project.ts",
 				"model/project-wire.ts",
 				"use-project.ts",
+				"develop/Tasks.tsx",
+				"model/workspace.ts",
+				"model/workspace-wire.ts",
+				"use-workspace.ts",
 				"model/workbench.ts",
 				"model/workbench-wire.ts",
 				"develop/Activity.tsx",
@@ -177,12 +181,18 @@ describe("the frontend's source", () => {
 		expect(api).toMatch(
 			/new URL\(\s*`\.\/api\/v0\/snapshot\?afterSequence=\$\{request\.afterSequence\}&limit=\$\{request\.limit\}`,\s*document\.baseURI/,
 		);
-		expect(api.match(/\/api\//g)?.length).toBe(14);
+		expect(api.match(/\/api\//g)?.length).toBe(15);
 		// The workbench routes: one fixed prefix, a closed list; the grant only in one header, never in a URL or the body.
-		expect(api.match(/\.\/api\/v0\/workbench\//g)?.length).toBe(9);
+		expect(api.match(/\.\/api\/v0\/workbench\//g)?.length).toBe(10);
 		for (const route of ["status", "transcript", "pair", "prompt/propose", "prompt/discard", "intervention/propose"])
 			expect(api).toContain(`./api/v0/workbench/${route}`);
 		expect(api).toMatch(/\.\/api\/v0\/workbench\/prompt\/\$\{request\.proposalId\}/);
+		// The workspace routes (the operator's tasks): one GET, and a closed list of six POSTs built from a task id and a revision the page
+		// holds, plus the operator's words. Nothing names a project, a path, a session, a launch or a command.
+		expect(api).toContain("./api/v0/workbench/workspace");
+		for (const operation of ["create", "update", "status", "select", "link-session", "unlink-session"])
+			expect(api).toContain(`/tasks/${operation}`);
+		expect(api).not.toMatch(/tasks\/(prompt|intervention|propose|stop|steer|queue|delete|shell|run)/);
 		// The project routes: GET only, a snapshot id and a number validated first, never a path, a branch or a command.
 		expect(api).toContain("./api/v0/workbench/project");
 		expect(api).toMatch(/\/diff\?snapshot=\$\{request\.snapshot\}&file=\$\{request\.id\}/);
@@ -246,6 +256,21 @@ describe("the frontend's source", () => {
 		expect(wb).toContain("if (!s.follow && !anyOpen(s)) return;");
 		for (const [name, text] of Object.entries(sources))
 			if (name !== "api.ts" && name !== "use-workbench.ts") expect(text, name).not.toMatch(/fetchWorkbench/);
+		// The workspace hook: no timer, no polling, one automatic read; only it asks the workspace routes. The components that draw tasks
+		// import neither the api nor the workbench's commands: they call what the hook returns, and none of that can send a prompt.
+		const workspaceHook = sources["use-workspace.ts"]!;
+		expect(workspaceHook).not.toMatch(/setTimeout|setInterval|requestAnimationFrame/);
+		expect(workspaceHook.match(/automatic\.current = key;/g)?.length).toBe(1);
+		// An edit sends only the fields the operator changed, against the revision they read, never a whole stale copy.
+		expect(workspaceHook).toContain("changedFields(input)");
+		expect(sources["api.ts"]).toMatch(
+			/request\.acceptance === undefined \? \{\} : \{ acceptance: request\.acceptance \}/,
+		);
+		for (const [name, text] of Object.entries(sources))
+			if (name !== "api.ts" && name !== "use-workspace.ts") expect(text, name).not.toMatch(/fetchWorkspace/);
+		const tasks = sources["develop/Tasks.tsx"]!;
+		expect(tasks).not.toMatch(/from "\.\.\/api\.ts"|use-workbench|propose|intervene|withdraw|\.prompt\b|fetch/);
+		expect(sources["model/workspace.ts"]).not.toMatch(/prompt|intervene|propose/i);
 		expect(sources["use-compare.ts"]!.match(/setTimeout\(/g)?.length).toBe(1);
 		expect(sources["use-compare.ts"]).toContain("if (sequence.current !== id) return;");
 		expect(sources["use-compare.ts"]).toContain("if (active && !entered.current)");

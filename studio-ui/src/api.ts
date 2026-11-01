@@ -39,6 +39,13 @@ import {
 	type WorkbenchRequest,
 	workbenchFailure,
 } from "./model/workbench-wire.ts";
+import {
+	isNoWorkspace,
+	readWorkspace,
+	type WorkspaceRefusal,
+	type WorkspaceReply,
+	type WorkspaceRequest,
+} from "./model/workspace-wire.ts";
 
 export interface Fetched {
 	reply: Reply;
@@ -352,6 +359,121 @@ export async function fetchProject(request: ProjectRequest, grant: string, cance
 		return { kind: "failure", status: 200, code: "invalid", retrySeconds: null };
 	} catch {
 		return { kind: "failure", status: 0, code: "unreachable", retrySeconds: null };
+	}
+}
+
+const WORKSPACE_REFUSALS: readonly WorkspaceRefusal[] = [
+	"grant-required",
+	"read-only",
+	"stale-revision",
+	"invalid-transition",
+	"bad-request",
+	"not-found",
+	"limit-reached",
+	"no-session",
+	"unreadable",
+	"busy",
+	"storage-failed",
+	"unavailable",
+];
+
+/**
+ * The workspace routes: the operator's project and task metadata, behind the grant. One GET, and POSTs to a closed list of six task
+ * operations. A body is built from a task id and a revision the page holds plus the operator's own words; the page never names a project,
+ * a path, a session, a launch or a status of its own making, and nothing here reaches the agent. A reply is checked whole before it is
+ * accepted, and a failure is a classified reply with no body text.
+ */
+export async function fetchWorkspace(
+	request: WorkspaceRequest,
+	grant: string,
+	cancel: AbortSignal,
+): Promise<WorkspaceReply> {
+	const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+	const bad: WorkspaceReply = { kind: "failure", status: 0, code: "bad-request" };
+	let route = "./api/v0/workbench/workspace";
+	let body: string | null = null;
+	const id = (v: string): boolean => /^endo\.task\.[0-9a-f]{32}$/.test(v);
+	const revision = (v: number): boolean => Number.isSafeInteger(v) && v >= 0;
+	if (request.kind !== "read") {
+		if (request.kind === "create") {
+			route += "/tasks/create";
+			body = JSON.stringify({
+				title: request.title,
+				description: request.description,
+				acceptance: request.acceptance,
+			});
+		} else if (request.kind === "select") {
+			if (request.taskId !== null && !id(request.taskId)) return bad;
+			route += "/tasks/select";
+			body = JSON.stringify({ taskId: request.taskId });
+		} else {
+			if (!id(request.taskId) || !revision(request.revision)) return bad;
+			if (request.kind === "update") {
+				route += "/tasks/update";
+				// Only the fields the operator changed are sent: a field they did not touch is never written back from an old copy.
+				body = JSON.stringify({
+					taskId: request.taskId,
+					expectedRevision: request.revision,
+					...(request.title === undefined ? {} : { title: request.title }),
+					...(request.description === undefined ? {} : { description: request.description }),
+					...(request.acceptance === undefined ? {} : { acceptance: request.acceptance }),
+				});
+			} else if (request.kind === "status") {
+				route += "/tasks/status";
+				body = JSON.stringify({
+					taskId: request.taskId,
+					expectedRevision: request.revision,
+					to: request.to,
+					...(request.note === "" ? {} : { note: request.note }),
+				});
+			} else if (request.kind === "link") {
+				route += "/tasks/link-session";
+				body = JSON.stringify({ taskId: request.taskId, expectedRevision: request.revision });
+			} else {
+				if (!/^[0-9a-f]{16}$/.test(request.linkId)) return bad;
+				route += "/tasks/unlink-session";
+				body = JSON.stringify({
+					taskId: request.taskId,
+					expectedRevision: request.revision,
+					linkId: request.linkId,
+				});
+			}
+		}
+	}
+	try {
+		const response = await fetch(new URL(route, document.baseURI), {
+			method: body === null ? "GET" : "POST",
+			credentials: "omit",
+			referrerPolicy: "no-referrer",
+			redirect: "error",
+			cache: "no-store",
+			headers: { "X-Endo-Grant": grant, ...(body === null ? {} : { "Content-Type": "application/json" }) },
+			...(body === null ? {} : { body }),
+			signal: AbortSignal.any([cancel, timeout]),
+		});
+		let json: unknown = null;
+		try {
+			json = await response.json();
+		} catch {
+			/* a refusal whose body cannot be read is still a refusal */
+		}
+		if (response.status === 404 && request.kind === "read") return { kind: "absent" };
+		if (response.status === 200 && request.kind === "read" && isNoWorkspace(json)) return { kind: "absent" };
+		if (response.status !== 200) {
+			const named =
+				typeof json === "object" && json !== null && typeof (json as { error?: unknown }).error === "string"
+					? (json as { error: string }).error
+					: "";
+			const code = WORKSPACE_REFUSALS.find((c) => c === named) ?? "other";
+			return { kind: "failure", status: response.status, code };
+		}
+		if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))
+			throw new Error("content type");
+		const record = readWorkspace(json);
+		if (record !== null) return { kind: "workspace", record };
+		return { kind: "failure", status: 200, code: "invalid" };
+	} catch {
+		return { kind: "failure", status: 0, code: "unreachable" };
 	}
 }
 
