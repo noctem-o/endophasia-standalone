@@ -16,6 +16,7 @@ import { EventView } from "../observe/Inspector.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Note } from "../ui/text.tsx";
 import { useNarrow } from "../ui/use-narrow.ts";
+import type { OmpApi } from "../use-omp.ts";
 import type { ProjectApi } from "../use-project.ts";
 import type { WorkspaceApi } from "../use-workspace.ts";
 import { Activity } from "./Activity.tsx";
@@ -23,6 +24,7 @@ import { projectView } from "./Changes.tsx";
 import { Arrival, Beacon, FieldLayer, FieldLegend, useReducedMotion } from "./Field.tsx";
 import { LiveContext, LiveConversation, LiveRow, shortSession, type Workbench } from "./Live.tsx";
 import { type Develop, Navigator, shortAlias } from "./Navigator.tsx";
+import { OmpActivity, OmpGroup, OmpInspector } from "./Omp.tsx";
 import type { ReasoningView } from "./Reasoning.tsx";
 import { SessionInspector } from "./SessionInspector.tsx";
 
@@ -90,6 +92,7 @@ export function DevelopWorkspace({
 	workbench,
 	project,
 	workspace,
+	omp,
 	reasoning,
 	onObserveLive,
 	appearance = "instrument",
@@ -106,6 +109,8 @@ export function DevelopWorkspace({
 	project: ProjectApi;
 	/** The operator's project and tasks (metadata; choosing a task sends nothing and changes nothing else). */
 	workspace: WorkspaceApi;
+	/** Oh My Pi's saved sessions, when the server observes a directory of them (read-only; a snapshot each time it is read). */
+	omp: OmpApi;
 	/** How model-provided reasoning is shown (display only, memory only). */
 	reasoning: ReasoningView;
 	/** The workbench (the broker's live view), or a state saying the server has none. */
@@ -285,18 +290,40 @@ export function DevelopWorkspace({
 
 	// The live conversation is shown only when this server has a workbench and the operator has not chosen a recorded session.
 	const liveMode = workbench.state.availability === "available" && workbench.state.view === "live";
+	// An OMP saved session, when one is chosen: its own activity and inspector, in the same places.
+	const ompMode = !liveMode && omp.state.selected !== null;
 	const liveRow =
 		workbench.state.availability === "available" ? (
 			<LiveRow
 				wb={workbench}
 				selected={liveMode}
 				onSelect={() => {
+					omp.choose(null);
 					workbench.setView("live");
 					if (narrow) dispatch({ type: "stage", stage: "activity" });
 				}}
 			/>
 		) : undefined;
-	const navigator = <Navigator develop={develop} live={liveRow} onRecorded={() => workbench.setView("recorded")} />;
+	const navigator = (
+		<Navigator
+			develop={develop}
+			live={liveRow}
+			onRecorded={() => {
+				omp.choose(null);
+				workbench.setView("recorded");
+			}}
+			external={
+				<OmpGroup
+					omp={omp}
+					onChoose={(selector) => {
+						if (workbench.state.availability === "available") workbench.setView("recorded");
+						omp.choose(selector);
+						if (narrow) dispatch({ type: "stage", stage: "activity" });
+					}}
+				/>
+			}
+		/>
+	);
 	// Choosing a file in the context column reads it in the centre: on a narrow screen that is the other stage.
 	const chosen: ProjectApi = {
 		...project,
@@ -315,14 +342,16 @@ export function DevelopWorkspace({
 			}
 		/>
 	);
-	const inList = state.stage === "sessions" || (!liveMode && state.selected === null);
+	const inList = state.stage === "sessions" || (!liveMode && !ompMode && state.selected === null);
 	const crumbName = liveMode
 		? workbench.state.status?.session === null || workbench.state.status === null
 			? "live session"
 			: shortSession(workbench.state.status.session)
-		: detail === null
-			? "…"
-			: shortAlias(detail.session.session);
+		: ompMode
+			? (omp.state.detail?.session.alias ?? "OMP saved session")
+			: detail === null
+				? "…"
+				: shortAlias(detail.session.session);
 
 	// Field: what the field and the ledger are built from. Typed state and counts only; no text reaches the renderer.
 	const field = appearance === "field";
@@ -349,7 +378,7 @@ export function DevelopWorkspace({
 				: liveEmpty
 					? "arrival"
 					: "conversation"
-		: detail !== null
+		: detail !== null || ompMode
 			? "recording"
 			: "arrival";
 	const signal = fieldSignal({
@@ -467,11 +496,15 @@ export function DevelopWorkspace({
 								arrival={arrival}
 								beacon={beacon}
 							/>
+						) : ompMode ? (
+							<OmpActivity omp={omp} onDetails={() => dispatch({ type: "stage", stage: "details" })} />
 						) : (
 							open
 						)
 					) : liveMode ? (
 						liveContext
+					) : ompMode ? (
+						<OmpInspector omp={omp} />
 					) : (
 						inspector
 					)}
@@ -531,6 +564,8 @@ export function DevelopWorkspace({
 								</>
 							}
 						/>
+					) : ompMode ? (
+						<OmpActivity omp={omp} />
 					) : field && state.selected === null ? (
 						<section className="panel develop-activity develop-arrival" id="develop-arrival" aria-label="Develop">
 							{arrival}
@@ -538,7 +573,7 @@ export function DevelopWorkspace({
 					) : (
 						open
 					)}
-					{liveMode ? liveContext : inspector}
+					{liveMode ? liveContext : ompMode ? <OmpInspector omp={omp} /> : inspector}
 				</div>
 			)}
 			{field && onPause !== undefined ? (

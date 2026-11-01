@@ -69,12 +69,17 @@ The validator returns the first failure and is pure.
    recorded `running` state means a run was open at the last recorded event, never that a process exists; it stays read-only. A
    recording that could not be qualified has no key, no status and its observation actions `unavailable` with the reason.
 
+3. *An Oh My Pi saved session* (`omp-saved`, [develop-omp-observer.md](develop-omp-observer.md)): `harness`, ownership `external`
+   (`recorded`), observation `recorded`, connection not applicable ("a saved file is not a connection"). Its status is OMP's own
+   **reported** exit when that is the last entry, otherwise the turn state at the last saved entry, **as recorded**; never a process state.
+   `lifecycle` and `activity` supported through the observer, every live observation and every control action `unsupported`.
+
 **Test-only shapes** (`tests/develop-session-fixtures.ts`; `synthetic: true`, every source id begins `test-`; not integrations, never
 connected, refused by a production validation, and a test fails if any production module imports them)
 
-3. *An externally owned read-only session*: `external-host`, ownership `external` (reported by the host), live feed supported, no
+4. *An externally owned read-only session*: `external-host`, ownership `external` (reported by the host), live feed supported, no
    transcript feed, all control `unsupported`. It carries a **reported** `active` and an independently **observed** `idle`; both stay.
-4. *A meta-harness job with two children*: a coordinator (`meta-harness`, reports itself `ended`, offers `coordinate.*`), child alpha
+5. *A meta-harness job with two children*: a coordinator (`meta-harness`, reports itself `ended`, offers `coordinate.*`), child alpha
    (reported `active`, one `reported` edge claimed by the coordinator and not by alpha) and child beta (no status, observation
    unavailable, alias `job-1-beta`, **no edge**: a name or a start time links nothing). The coordinator ending says nothing of alpha;
    no session in the job can be controlled through Endophasia; child evidence stays attributed to the child's own source.
@@ -96,8 +101,9 @@ connected, refused by a production validation, and a test fails if any productio
 
 ## Limits
 
-- Real sources today: the live Pi workbench, recorded Pi, recorded DSH. No OMP, Codex, GooeyPi, ThinkRail, OpenRig or Agent
-  Orchestrator integration exists; the two fixtures show only that their shapes can be represented.
+- Real sources today: the live Pi workbench, recorded Pi, recorded DSH, and **Oh My Pi saved sessions** (`omp-saved`, read-only, from
+  a directory the operator names: [develop-omp-observer.md](develop-omp-observer.md)). No Codex, Claude Code, Hermes, Amp, GooeyPi, ThinkRail,
+  OpenRig or Agent Orchestrator integration exists; the two fixtures show only that their shapes can be represented.
 - Relations are validated and tested but no real source produces one yet, so DEVELOP draws none.
 - The surface is built in the browser and validated in tests; the browser imports the protocol as types only, so it does not validate
   at run time. A server-side projection is a later step if an integration needs one.

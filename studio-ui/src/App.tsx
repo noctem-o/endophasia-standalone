@@ -18,6 +18,7 @@ import { Note } from "./ui/text.tsx";
 import { useCompare } from "./use-compare.ts";
 import { useDevelop } from "./use-develop.ts";
 import { useObserve } from "./use-observe.ts";
+import { useOmp } from "./use-omp.ts";
 import { useProject } from "./use-project.ts";
 import { useWorkbench } from "./use-workbench.ts";
 import { useWorkspace } from "./use-workspace.ts";
@@ -44,6 +45,7 @@ export function App(): ReactElement {
 	const [fieldPaused, setFieldPaused] = useState(false);
 	const compare = useCompare(workspace === "compare");
 	const develop = useDevelop(workspace === "develop");
+	const omp = useOmp(workspace === "develop");
 	const workbench = useWorkbench(workspace === "develop");
 	const workbenchOn = workbench.state.availability === "available";
 	// The worktree context belongs to the live launch, so it is held here beside the workbench's state: switching workspaces does not drop it,
@@ -257,6 +259,7 @@ export function App(): ReactElement {
 							workbench={workbench}
 							project={project}
 							workspace={tasks}
+							omp={omp}
 							reasoning={reasoning}
 							onObserveLive={showObserveLive}
 							appearance={appearance}

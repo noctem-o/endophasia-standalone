@@ -127,6 +127,13 @@ import {
 	endoCapabilityStatusForV0,
 } from "./harness.ts";
 import type { EndoIdentifierKindV0 } from "./identity.ts";
+import {
+	type EndoOmpAbsentV0,
+	type EndoOmpSessionsV0,
+	type EndoOmpSessionV0,
+	validateEndoOmpSessionsV0,
+	validateEndoOmpSessionV0,
+} from "./omp-observation.ts";
 import { isIso8601UtcV0, isPlainJsonObjectV0 } from "./primitives.ts";
 import { defineEndoVersionTableV0, type EndoVersionedReadV0, readEndoVersionedV0 } from "./versioned.ts";
 
@@ -584,7 +591,10 @@ export type EndoCockpitRecordV0 =
 	| EndoCockpitTrajectoryComparisonV0
 	| EndoCockpitCompareCandidatesV0
 	| EndoCockpitDevelopSessionsV0
-	| EndoCockpitDevelopSessionV0;
+	| EndoCockpitDevelopSessionV0
+	| EndoOmpSessionsV0
+	| EndoOmpAbsentV0
+	| EndoOmpSessionV0;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Validation helpers
@@ -2811,6 +2821,9 @@ export const ENDO_COCKPIT_VERSIONS_V0 = defineEndoVersionTableV0<EndoCockpitReco
 	// on which of the two is evaluated first. The validators are function declarations, initialised before either runs.
 	["endo.cockpit-develop-sessions.v0", validateEndoCockpitDevelopSessionsV0],
 	["endo.cockpit-develop-session.v0", validateEndoCockpitDevelopSessionV0],
+	// An observation of OMP's saved sessions (protocol/omp-observation.ts): not evidence, never read from the store.
+	["endo.develop-omp-sessions.v0", validateEndoOmpSessionsV0],
+	["endo.develop-omp-session.v0", validateEndoOmpSessionV0],
 ]);
 
 /** Read a cockpit record under the version it declares; an unknown version is `unsupported-version`, never accepted. */

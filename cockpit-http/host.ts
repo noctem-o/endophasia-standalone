@@ -16,7 +16,9 @@
 
 import { lstatSync, readlinkSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import type { EndoOmpObserverV0 } from "../protocol/omp-observation.ts";
 import type { EndoCockpitWorkbenchV0 } from "../protocol/workbench-http.ts";
+import type { EndoDigestKeyV0 } from "../runtime/contracts/keyed-digest.ts";
 import { endoDigestKeyPathV0, loadOrCreateEndoDigestKeyV0 } from "../storage/digest-key.ts";
 import { type EndoCockpitServerV0, startEndoCockpitServerV0 } from "./server.ts";
 import { loadEndoStudioUiFilesV0 } from "./studio-ui.ts";
@@ -47,6 +49,11 @@ export interface EndoCockpitLaunchOptionsV0 {
 	 * `endo studio` never passes one: its server has no command route.
 	 */
 	workbench?: EndoCockpitWorkbenchV0;
+	/**
+	 * Opens the read-only observer of Oh My Pi's saved sessions under the server's own key (`endo studio --omp-sessions`). The caller
+	 * builds it; this module imports no adapter and reads no session file.
+	 */
+	omp?: { root: string; open(key: EndoDigestKeyV0): EndoOmpObserverV0 };
 }
 
 export interface EndoCockpitLaunchedV0 {
@@ -170,6 +177,15 @@ export async function launchEndoCockpitV0(options: EndoCockpitLaunchOptionsV0): 
 		throw new TypeError(
 			"the cockpit key file is inside the store Studio reads: Studio never writes the store, so keep the key elsewhere",
 		);
+	// OMP's directory is another program's: Studio writes nothing into it (not its key), and it is not the store, nor in it, nor around it.
+	if (options.omp !== undefined) {
+		const ompPlace = place(options.omp.root, "the OMP sessions directory");
+		const storePlace = place(rootPath, "the store");
+		if (isWithin(ompPlace, keyPlace))
+			throw new TypeError("the cockpit key file is inside the OMP sessions directory: Studio writes nothing there");
+		if (isWithin(ompPlace, storePlace) || isWithin(storePlace, ompPlace))
+			throw new TypeError("the OMP sessions directory and the store overlap: name two separate directories");
+	}
 	const created = !exists(keyFile);
 	const digestKey = loadOrCreateEndoDigestKeyV0(keyFile);
 	options.onKey?.({ path: keyFile, created });
@@ -180,6 +196,7 @@ export async function launchEndoCockpitV0(options: EndoCockpitLaunchOptionsV0): 
 		port: options.port ?? 0,
 		...(options.onError === undefined ? {} : { onError: options.onError }),
 		...(options.workbench === undefined ? {} : { workbench: options.workbench }),
+		...(options.omp === undefined ? {} : { omp: options.omp.open(digestKey) }),
 	});
 	return { server, key: { path: keyFile, created } };
 }

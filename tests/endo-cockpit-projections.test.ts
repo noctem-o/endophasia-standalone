@@ -747,6 +747,9 @@ describe("contract validators", () => {
 			"endo.cockpit-compare-candidates.v0",
 			"endo.cockpit-develop-sessions.v0",
 			"endo.cockpit-develop-session.v0",
+			// An observation of Oh My Pi's saved files beside the store, never read from it (protocol/omp-observation.ts).
+			"endo.develop-omp-sessions.v0",
+			"endo.develop-omp-session.v0",
 		]);
 	});
 

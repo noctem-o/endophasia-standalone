@@ -29,8 +29,12 @@ export async function exerciseStudioDevelop(browser: Browser, address: string): 
 		check(
 			page.seen.requests
 				.filter((r) => r.includes("/api/v0/develop/"))
-				.every((r) => /\/develop\/(sessions(?:\?cursor=s1-|$)|session\/d1-[0-9a-f]{64}(?:\?cursor=a1-|$))/.test(r)),
-			"browser uses the two DEVELOP routes with opaque tokens only",
+				.every((r) =>
+					/\/develop\/(sessions(?:\?cursor=s1-|$)|session\/d1-[0-9a-f]{64}(?:\?cursor=a1-|$)|omp\/sessions$)/.test(
+						r,
+					),
+				),
+			"browser uses the two DEVELOP routes with opaque tokens only (and one quiet OMP probe, answered with a constant)",
 		);
 		check(
 			page.seen.requests.every((url) => url.startsWith(`${new URL(address).origin}/`) || url === "about:blank"),

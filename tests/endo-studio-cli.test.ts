@@ -90,6 +90,7 @@ describe("the arguments", () => {
 			defaultNote: "using the default store /data/endophasia/store (XDG_DATA_HOME)",
 			port: 0,
 			keyFile: null,
+			ompSessions: null,
 		});
 		expect(parse("./rec")).toMatchObject({ root: "./rec", defaultNote: null, port: 0 });
 		expect(parse("--root", "./rec", "--port", "8085")).toMatchObject({ root: "./rec", port: 8085 });

@@ -15,6 +15,7 @@ import type {
 	EndoDevelopStatusClaimV0,
 	EndoDevelopSurfaceV0,
 } from "../../../protocol/develop-session.ts";
+import type { EndoOmpSessionRowV0 } from "../../../protocol/omp-observation.ts";
 import type { Offer, WorkbenchStatus } from "./workbench-wire.ts";
 
 const supported = (via: string): EndoDevelopCapabilityV0 => ({ status: "supported", via, reason: null });
@@ -183,17 +184,116 @@ export function presentRecorded(row: EndoCockpitDevelopSessionRowV0, generation:
 	};
 }
 
+const OMP_KEY_WORDS: Record<Extract<EndoOmpSessionRowV0["key"], { status: "unavailable" }>["reason"], string> = {
+	"duplicate-id":
+		"Two saved files in the selected directory carry this session id, so neither is treated as that session.",
+	"malformed-id": "The file's header does not carry a well-formed session id, and none is made up for it.",
+	"no-header": "The file could not be read as an OMP session, so it has no session id here.",
+};
+const OMP_NO_CONTROL =
+	"Endophasia only reads OMP's saved files. It has no path to the OMP process, and a saved file is not one to control.";
+
+/**
+ * One Oh My Pi saved session, as Endophasia observed its file (adapters/omp, served only when the operator named the directory). The
+ * file is OMP's own record, so the status says what OMP RECORDED (its turn at the last saved entry) or REPORTED (its own exit record),
+ * never what a process is doing now: no file time is read as one, and liveness is not established at all. Nothing here is controllable.
+ */
+export function presentOmpSaved(row: EndoOmpSessionRowV0): EndoDevelopSessionV0 {
+	const source = "omp-saved";
+	const readable = row.state === "readable";
+	const lastAt = row.lastEntryAt;
+	const status: EndoDevelopStatusClaimV0[] = !readable
+		? []
+		: row.exit !== null
+			? [
+					{
+						// A signal exit is an interruption; a normal exit, or one of a kind this version does not know, is an end OMP recorded.
+						state: row.exit.kind === "signal" ? "interrupted" : "ended",
+						basis: "reported",
+						by: "omp",
+						at: row.exit.at,
+					},
+				]
+			: row.turn === "empty"
+				? []
+				: [{ state: row.turn === "open" ? "active" : "idle", basis: "recorded", by: source, at: lastAt }];
+	const why =
+		row.state === "unsupported-version"
+			? "The file is in an OMP session format this version does not read."
+			: row.state === "readable"
+				? null
+				: "The file could not be read as a stable OMP session.";
+	return {
+		schemaVersion: "endo.develop-session.v0",
+		identity: {
+			source,
+			key:
+				row.key.status === "established"
+					? { status: "established", id: row.key.id, scope: "source" }
+					: { status: "unavailable", reason: OMP_KEY_WORDS[row.key.reason] },
+			alias: row.alias,
+		},
+		integration: { label: "Oh My Pi saved session", type: "harness" },
+		synthetic: false,
+		// That the file is OMP's is the operator's statement (the directory they named) and a format match; the runtime is a recorded fact
+		// only when the entries themselves name the OMP version that wrote them.
+		runtime:
+			row.runtimeVersions.length === 0
+				? {
+						status: "unavailable",
+						reason:
+							"No entry in the file records which OMP version wrote it; the directory was named as OMP's by the operator.",
+					}
+				: {
+						status: "established",
+						value: { name: "Oh My Pi", version: row.runtimeVersions[row.runtimeVersions.length - 1]! },
+						basis: "recorded",
+						by: source,
+					},
+		ownership: { status: "established", value: "external", basis: "recorded", by: source },
+		observation: { mode: "recorded", reason: null },
+		connection: {
+			state: "not-applicable",
+			reason:
+				"A saved file is not a connection. Whether an OMP process holds this session now cannot be told from it.",
+		},
+		status,
+		capabilities: {
+			observe: {
+				"live-status": unsupported("Only the saved file is read; no OMP process is asked anything."),
+				"live-transcript": unsupported(
+					"No transcript is shown: only counts and kinds of committed entries, without their text.",
+				),
+				"live-reasoning": unsupported("Model-provided reasoning is not read from OMP's files."),
+				lifecycle: why === null ? supported("omp-saved-observer") : unavailable(why),
+				activity: why === null ? supported("omp-saved-observer") : unavailable(why),
+			},
+			control: {
+				prompt: unsupported(OMP_NO_CONTROL),
+				steer: unsupported(OMP_NO_CONTROL),
+				queue: unsupported(OMP_NO_CONTROL),
+				stop: unsupported(OMP_NO_CONTROL),
+				resume: unsupported(OMP_NO_CONTROL),
+			},
+			coordinate: NO_COORDINATION("Oh My Pi, as observed here,"),
+		},
+		evidence: [{ kind: "omp-saved-session.v0", producedBy: source, generation: null }],
+	};
+}
+
 /** Everything DEVELOP shows, as one surface: no relation is derived, because nothing here establishes one. */
 export function developSurface(
 	live: { status: WorkbenchStatus | null; unreachable: boolean } | null,
 	rows: readonly EndoCockpitDevelopSessionRowV0[],
 	generation: string | null,
+	omp: readonly EndoOmpSessionRowV0[] = [],
 ): EndoDevelopSurfaceV0 {
 	return {
 		schemaVersion: "endo.develop-session-surface.v0",
 		sessions: [
 			...(live === null ? [] : [presentLivePi(live.status, live.unreachable)]),
 			...rows.map((row) => presentRecorded(row, generation)),
+			...omp.map((row) => presentOmpSaved(row)),
 		],
 		relations: [],
 	};

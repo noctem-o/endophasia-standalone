@@ -2,6 +2,7 @@
 // Requests use document.baseURI without printing or persisting its per-launch capability.
 // Every outcome becomes a classified reply with fixed failure text; raw exceptions and URLs never reach the page.
 
+import type { EndoOmpSessionV0 } from "../../protocol/omp-observation.ts";
 import type { CompareRequest } from "./model/compare.ts";
 import {
 	type CompareReply,
@@ -22,6 +23,7 @@ import {
 	readDevelopSessions,
 	sessionsCursor,
 } from "./model/develop-wire.ts";
+import { type OmpList, ompSelector, readOmpSession, readOmpSessions } from "./model/omp-wire.ts";
 import {
 	type ProjectReply,
 	type ProjectRequest,
@@ -175,6 +177,79 @@ export async function fetchDevelop(request: DevelopRequest, cancel: AbortSignal)
 					: "The response could not be read or the server could not be reached. Retry explicitly.",
 			invalid: false,
 			retrySeconds: null,
+		};
+	}
+}
+
+export type OmpRequest = { kind: "list" } | { kind: "session"; selector: string };
+export type OmpReply =
+	| { kind: "list"; record: OmpList }
+	| { kind: "session"; record: EndoOmpSessionV0 }
+	| { kind: "failure"; message: string; stale: boolean };
+
+/**
+ * Oh My Pi's saved sessions, as the server observed them: two fixed relative GET routes, the second named by an opaque selector the list
+ * gave (never a path, a title or an id). Read only when the page asks.
+ */
+export async function fetchOmp(request: OmpRequest, cancel: AbortSignal): Promise<OmpReply> {
+	const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+	let route = "./api/v0/develop/omp/sessions";
+	if (request.kind === "session") {
+		if (!ompSelector(request.selector))
+			return { kind: "failure", message: "Invalid selection. Read the OMP sessions again.", stale: true };
+		route = `./api/v0/develop/omp/session/${request.selector}`;
+	}
+	try {
+		const response = await fetch(new URL(route, document.baseURI), {
+			method: "GET",
+			credentials: "omit",
+			referrerPolicy: "no-referrer",
+			redirect: "error",
+			cache: "no-store",
+			signal: AbortSignal.any([cancel, timeout]),
+		});
+		let body: unknown = null;
+		try {
+			body = await response.json();
+		} catch {
+			/* a refusal is told by its status */
+		}
+		if (response.status === 404)
+			return {
+				kind: "failure",
+				message:
+					"That saved session is no longer where it was, or its file was replaced. Read the OMP sessions again.",
+				stale: true,
+			};
+		if (response.status === 429)
+			return {
+				kind: "failure",
+				message: "The server is pacing reads. Wait a moment, then read again.",
+				stale: false,
+			};
+		if (response.status !== 200)
+			return { kind: "failure", message: "The read failed. Nothing from it was accepted.", stale: false };
+		if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? ""))
+			throw new Error("content type");
+		if (request.kind === "list") {
+			const record = readOmpSessions(body);
+			if (record !== null) return { kind: "list", record };
+		} else {
+			const record = readOmpSession(body);
+			if (record !== null) return { kind: "session", record };
+		}
+		return {
+			kind: "failure",
+			message: "Unsupported or malformed OMP observation. Nothing from it was accepted.",
+			stale: false,
+		};
+	} catch {
+		return {
+			kind: "failure",
+			message: cancel.aborted
+				? "Request interrupted. Read again explicitly."
+				: "The response could not be read or the server could not be reached. Read again explicitly.",
+			stale: false,
 		};
 	}
 }
