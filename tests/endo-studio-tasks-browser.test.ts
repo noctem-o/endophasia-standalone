@@ -456,6 +456,34 @@ suite("the operator's journey through a project and its tasks (Instrument)", () 
 		expect(stored.ok && stored.file.tasks.map((t) => t.title)).toEqual(["Held while saving"]);
 	});
 
+	it("does not let the status note be edited while its change is in flight", async () => {
+		const api = await launch(1440, 900);
+		const { page } = api;
+		await ready(page);
+		await openTab(page);
+		await create(page, "Noted");
+		await page.eval(`(() => {
+			const real = window.fetch.bind(window);
+			window.__release = null;
+			window.fetch = (input, init) => {
+				const url = String(input instanceof Request ? input.url : input);
+				if (!url.includes("workspace/tasks/status")) return real(input, init);
+				return new Promise((resolve, reject) => {
+					window.__release = () => real(input, init).then(resolve, reject);
+				});
+			};
+		})()`);
+		await fill(page, "[data-testid=task-note]", "started on it");
+		await page.click("[data-testid=task-to-in-progress]");
+		await page.waitFor("window.__release !== null");
+		expect(await page.eval<boolean>("document.querySelector('[data-testid=task-note]').readOnly")).toBe(true);
+		await page.eval("window.__release()");
+		await page.waitFor("document.querySelector('[data-testid=task-detail]').dataset.status === 'in-progress'");
+		const stored = new DevelopTasksStoreV0(api.state.root).read();
+		expect(stored.ok && stored.file.tasks[0]?.history.at(-1)?.note).toBe("started on it");
+		expect(await page.eval<boolean>("document.querySelector('[data-testid=task-note]').readOnly")).toBe(false);
+	});
+
 	it("links the current session as a reference, and shows it as an earlier launch after a restart", async () => {
 		const first = await launch(1440, 900);
 		await ready(first.page);
@@ -576,6 +604,7 @@ suite("what the page says when it cannot show or change tasks", () => {
 		const root = developStore();
 		const cwd = demoRepo();
 		const project = await registerProject(root, cwd);
+		const good = readFileSync(join(root, "develop", "tasks.json"), "utf8");
 		writeFileSync(join(root, "develop", "tasks.json"), '{"schemaVersion": "endo.develop-tasks.v0", "rev');
 		const api = await launch(1440, 900, { prior: { root, cwd, project: project.id } });
 		await api.page.waitFor("document.querySelector('[data-testid=task-cluster]')?.dataset.state === 'unreadable'");
@@ -589,6 +618,11 @@ suite("what the page says when it cannot show or change tasks", () => {
 		await api.page.click("[data-testid=tab-conversation]");
 		expect(await api.page.eval<number>("document.querySelectorAll('.turn').length")).toBeGreaterThan(0);
 		await shot(api.page, "tasks-instrument-damaged-1440");
+		// Mended by the operator (here: restored): the page can read again without a reload, which would lose any unsaved words.
+		writeFileSync(join(root, "develop", "tasks.json"), good);
+		await api.page.click("[data-testid=tasks-read-again]");
+		await api.page.waitFor("document.querySelector('[data-testid=task-panel]')?.dataset.state === 'ready'");
+		expect(await cluster(api.page)).not.toContain("not valid JSON");
 	});
 
 	it("a project the store does not know shows no tasks", async () => {

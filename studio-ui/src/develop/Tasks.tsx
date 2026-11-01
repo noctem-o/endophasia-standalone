@@ -423,14 +423,24 @@ export function TaskPanel({
 							)}
 						</p>
 					) : null}
-					{shown.kind === "unreachable" || shown.kind === "unpaired" ? (
+					{shown.kind === "unreachable" ||
+					shown.kind === "unpaired" ||
+					shown.kind === "unreadable" ||
+					shown.kind === "unknown-project" ? (
+						// Also where the file is damaged or the project unknown: once the operator has mended it (or registered the project) they can
+						// ask again without reloading, which would discard the words held in unsaved forms.
 						<button
 							type="button"
 							className="btn"
+							data-testid="tasks-read-again"
 							disabled={!workspace.paired || state.busy}
 							onClick={workspace.refresh}
 						>
-							{state.busy ? "Reading…" : "Read tasks"}
+							{state.busy
+								? "Reading…"
+								: shown.kind === "unreadable" || shown.kind === "unknown-project"
+									? "Read again"
+									: "Read tasks"}
 						</button>
 					) : null}
 				</div>
@@ -688,9 +698,18 @@ function TaskDetail({
 }): ReactElement {
 	const editing = workspace.drafts[task.id] !== undefined;
 	const [note, setNote] = useState("");
+	// While a change is in flight the note is the one being recorded: it cannot change under the request, so a success never discards
+	// words typed after the button was pressed (a failure re-opens it untouched).
+	const [recording, setRecording] = useState(false);
 	const busy = workspace.state.busy;
 	const ask = async (to: TaskStatus) => {
-		if (await workspace.setStatus(task, to, note.trim())) setNote("");
+		if (recording) return;
+		setRecording(true);
+		try {
+			if (await workspace.setStatus(task, to, note.trim())) setNote("");
+		} finally {
+			setRecording(false);
+		}
 	};
 	return (
 		<article className="task-detail" data-testid="task-detail" data-status={task.status}>
@@ -757,6 +776,7 @@ function TaskDetail({
 							aria-label="Note for this status change"
 							maxLength={LIMITS.note}
 							value={note}
+							readOnly={recording}
 							onChange={(event) => setNote(event.currentTarget.value)}
 						/>
 						{[...task.next]
