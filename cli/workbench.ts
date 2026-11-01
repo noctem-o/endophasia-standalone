@@ -16,6 +16,7 @@ import type { PiInterventionDeskV0 } from "../adapters/pi/intervention.ts";
 import { type WorkbenchApproverV0, WorkbenchBrokerV0 } from "../adapters/pi/workbench.ts";
 import { cockpitAliasesV0 } from "../cockpit/index.ts";
 import { launchEndoCockpitV0 } from "../cockpit-http/host.ts";
+import { DevelopWorkspaceServiceV0 } from "../runtime/contracts/develop-workspace.ts";
 import { DevelopTasksStoreV0 } from "../storage/develop-tasks.ts";
 import { loadOrCreateEndoDigestKeyV0 } from "../storage/digest-key.ts";
 import { endoStudioUiDirectoryV0 } from "./studio.ts";
@@ -145,6 +146,7 @@ export async function startWorkbenchV0(
 			return null;
 		}
 	};
+	const projectId = options.projectId;
 	const broker = new WorkbenchBrokerV0({
 		session,
 		key: session.owner.digestKey(),
@@ -152,13 +154,16 @@ export async function startWorkbenchV0(
 		approver,
 		interventions: desk,
 		project: new GitProjectInspectorV0({ cwd: options.cwd }),
-		...(options.projectId === undefined
+		...(projectId === undefined
 			? {}
 			: {
 					tasks: {
-						store: new DevelopTasksStoreV0(session.owner.options.root),
-						projectId: options.projectId,
-						launchDirectory: options.cwd,
+						// The operator's configuration for this launch; the broker adds the host's own facts when it opens the scope.
+						open: (host) =>
+							new DevelopWorkspaceServiceV0(new DevelopTasksStoreV0(session.owner.options.root)).forLaunch(
+								{ projectId, launchDirectory: options.cwd },
+								host,
+							),
 					},
 				}),
 		aliasOf: (id) => aliasOf(id),

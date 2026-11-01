@@ -176,6 +176,18 @@ export const ENDO_LAUNCH_ID_PATTERN_V0 = /^[0-9a-f]{16}$/;
 // Exactly what `piEndoSessionIdV0` can produce: the Pi id itself (1-200 plain characters) or a digest of one that is not plain.
 const SESSION_ID_PATTERN = /^endo\.session\.pi\.[A-Za-z0-9._-]{1,200}$/;
 
+/**
+ * The session sources this version of the file can record. Closed: a host that speaks for any other source (a future harness) can read the
+ * workspace and record nothing about its sessions until a version of this file knows that source. A source is never inferred from an id.
+ */
+export const ENDO_DEVELOP_SESSION_SOURCES_V0 = ["pi-live"] as const;
+export type EndoDevelopSessionSourceV0 = (typeof ENDO_DEVELOP_SESSION_SOURCES_V0)[number];
+export const isEndoDevelopSessionSourceV0 = (value: unknown): value is EndoDevelopSessionSourceV0 =>
+	typeof value === "string" && (ENDO_DEVELOP_SESSION_SOURCES_V0 as readonly string[]).includes(value);
+/** Whether `id` has the form this file requires of a session id from `source` (the same check the file's validator makes). */
+export const isEndoDevelopSessionIdV0 = (source: EndoDevelopSessionSourceV0, id: unknown): id is string =>
+	source === "pi-live" && typeof id === "string" && SESSION_ID_PATTERN.test(id);
+
 // ---- the strict validator -----------------------------------------------------------------------------------------------------------
 
 const bad = (what: string): never => {
@@ -222,8 +234,7 @@ function ref(v: unknown): EndoDevelopSessionRefV0 {
 	if (typeof r.linkId !== "string" || !ENDO_LINK_ID_PATTERN_V0.test(r.linkId)) bad("a session reference has a bad id");
 	if (r.source !== "pi-live" || r.linkedBy !== "operator" || r.via !== "workbench")
 		bad("a session reference has an unknown source");
-	if (typeof r.sessionId !== "string" || !SESSION_ID_PATTERN.test(r.sessionId))
-		bad("a session reference has a bad session id");
+	if (!isEndoDevelopSessionIdV0("pi-live", r.sessionId)) bad("a session reference has a bad session id");
 	if (typeof r.launchId !== "string" || !ENDO_LAUNCH_ID_PATTERN_V0.test(r.launchId))
 		bad("a session reference has a bad launch id");
 	return {

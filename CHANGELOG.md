@@ -30,6 +30,14 @@
   [docs/harness-upgrades.md](docs/harness-upgrades.md#changing-the-identity-basis).
 
 ### Added
+- **One workspace service for DEVELOP projects and tasks** (`runtime/contracts/develop-workspace.ts`). The `endo project`/`endo task` commands and
+  the workbench's task routes now call one implementation. The service owns registration, the read model, the writable gate and session
+  references. It has an operator scope (the CLI) and a launch scope for one project and one launch (the workbench). The broker is given
+  only the launch scope, never the store. A session reference is built from the host's own facts and is current only for the same launch,
+  the same source and the connected session; a host of a source the file does not know can link nothing. The file format, the read model,
+  the CLI output and the routes are unchanged. The service is usable as a library without Pi, a server or a browser, which a non-Pi consumer
+  test process demonstrates. It is not a daemon, a network service or a coordinator. See
+  [docs/develop-workspace-service.md](docs/develop-workspace-service.md).
 - **DEVELOP projects and tasks: a persistent workspace beside the live conversation.** The operator registers a project (`endo project add
   --name <n> --path <dir>`: an explicit statement that this directory is this project; nothing is opened or run), names it for a launch
   (`endo harness attach … --control --workbench --project <id>`), and writes **tasks** under it: a title, an optional description and

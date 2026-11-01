@@ -120,7 +120,9 @@ implementation detail and its limitations. The real recordings and studies, with
   operator registered; a task is what they intend to get done, with an operator-owned status; both live in `<root>/develop/tasks.json`,
   separate from the evidence, written atomically under a lock with per-task revisions. A session reference is explicit, made by the operator
   in the workbench and scoped to its launch (historical after a restart). The routes sit inside the existing broker, behind the pairing grant;
-  none sends a command, and `endo studio` has none of them.
+  none sends a command, and `endo studio` has none of them. The CLI and the workbench's routes share one application-level implementation,
+  the workspace service `runtime/contracts/develop-workspace.ts` ([decision record](develop-workspace-service.md)), which is usable as a library without
+  Pi, a server or a browser; it is not a daemon, a network service or a coordinator.
 - Tests: a deterministic suite with a fake Pi child process and a fake OpenAI-compatible endpoint, plus an opt-in
   acceptance suite against a real installed Pi. The real Pi 1.0.0 recording (mapping.1, a historical specimen pinned by digest) is in
   [`research/pi-conformance/1.0.0/`](../research/pi-conformance/1.0.0/).

@@ -8,17 +8,18 @@
  * opened, searched or run; Git is asked once, read-only, what the worktree root there is, and the answer is kept as an observation. The
  * registration grants no access to anything: a workbench uses the project only when it is started with `--project <id>` from that directory.
  *
- * Nothing here talks to Pi, a model, the event store or the network, and no command sends a prompt or changes a worktree.
+ * Nothing here talks to Pi, a model, the event store or the network, and no command sends a prompt or changes a worktree. The commands are a
+ * translation of flags and refusals around the shared workspace service (runtime/contracts/develop-workspace.ts), the same one the workbench uses.
  */
-import { realpathSync, statSync } from "node:fs";
 import { GitProjectInspectorV0 } from "../adapters/git/project-inspector.ts";
-import {
-	ENDO_DEVELOP_TASK_STATUSES_V0,
-	type EndoDevelopTasksFileV0,
-	type EndoDevelopTaskV0,
-} from "../protocol/develop-tasks.ts";
+import { ENDO_DEVELOP_TASK_STATUSES_V0, type EndoDevelopTaskV0 } from "../protocol/develop-tasks.ts";
 import { canonicalEndoJsonV0 } from "../runtime/contracts/canonical-json.ts";
-import { DevelopTasksStoreV0, type EndoTasksResultV0 } from "../storage/develop-tasks.ts";
+import {
+	type DevelopWorkspaceRefusalV0,
+	type DevelopWorkspaceResultV0,
+	DevelopWorkspaceServiceV0,
+} from "../runtime/contracts/develop-workspace.ts";
+import { DevelopTasksStoreV0 } from "../storage/develop-tasks.ts";
 import { announceEndoRootV0, takeEndoRootV0 } from "./root-args.ts";
 
 const PROJECT_USAGE =
@@ -26,7 +27,7 @@ const PROJECT_USAGE =
 const TASK_USAGE =
 	"usage: endo task list [<root> | --root dir] --project <id> | endo task add ... --project <id> --title <t> [--description <d>] [--acceptance <a>] | endo task status ... --project <id> --task <id> --to <status> [--note <n>] [--revision n]";
 
-const REFUSALS: Readonly<Record<string, string>> = {
+const REFUSALS: Readonly<Record<DevelopWorkspaceRefusalV0, string>> = {
 	"not-found": "no such project or task in this store",
 	"stale-revision": "the task changed since that revision; read it again",
 	"invalid-transition": "that status change is not allowed from the task's current status",
@@ -36,6 +37,12 @@ const REFUSALS: Readonly<Record<string, string>> = {
 	unreadable: "the task file exists but cannot be used; it was not changed",
 	busy: "another process is writing the task file; try again",
 	"storage-failed": "the task file could not be written; nothing was changed",
+	"not-a-directory": "--path must be an existing directory",
+	// A launch's refusals: the CLI is not a launch and is never given them.
+	"read-only": "the workspace is read-only here",
+	"no-session": "there is no connected session",
+	"unsupported-source": "that session source cannot be recorded",
+	unavailable: "the session facts are unavailable",
 };
 
 function flagsOf(argv: readonly string[], values: readonly string[], usage: string, positionals = 0) {
@@ -54,44 +61,44 @@ function flagsOf(argv: readonly string[], values: readonly string[], usage: stri
 	return { root: taken.root, flags };
 }
 
-function unwrap<T>(result: EndoTasksResultV0<T>): T {
+/** A read's answer: an unreadable file is said in a read's words. */
+function unwrapRead<T>(result: DevelopWorkspaceResultV0<T>): T {
+	if (!result.ok && result.code === "unreadable")
+		throw new Error(`the task file cannot be used (${result.reason ?? "io"}); it was not changed`);
+	return unwrap(result);
+}
+
+function unwrap<T>(result: DevelopWorkspaceResultV0<T>): T {
 	if (result.ok) return result.value;
 	const why = result.reason === undefined ? "" : ` (${result.reason})`;
 	throw new Error(`${REFUSALS[result.code] ?? result.code}${why}`);
 }
 
+/** What Git says the worktree root of a directory is, read-only, as an observation to compare later. Not finding one is not a failure. */
+async function observeGitRoot(directory: string): Promise<string | null> {
+	const inspector = new GitProjectInspectorV0({ cwd: directory });
+	try {
+		const overview = await inspector.overview();
+		return overview.state === "ready" && overview.repository !== null ? overview.repository.root : null;
+	} finally {
+		inspector.dispose();
+	}
+}
+
+const serviceAt = (root: string) => new DevelopWorkspaceServiceV0(new DevelopTasksStoreV0(root), { observeGitRoot });
+
 const print = (value: unknown): void => {
 	process.stdout.write(`${canonicalEndoJsonV0(value as never)}\n`);
 };
-
-function readFile(store: DevelopTasksStoreV0): EndoDevelopTasksFileV0 {
-	const read = store.read();
-	if (!read.ok) throw new Error(`the task file cannot be used (${read.reason}); it was not changed`);
-	return read.file;
-}
 
 async function projectAdd(argv: readonly string[]): Promise<void> {
 	const { root, flags } = flagsOf(argv, ["--name", "--path"], PROJECT_USAGE);
 	const name = flags.get("--name");
 	const given = flags.get("--path");
 	if (name === undefined || given === undefined) throw new TypeError(PROJECT_USAGE);
-	let path: string;
-	try {
-		path = realpathSync(given);
-		if (!statSync(path).isDirectory()) throw new Error("not a directory");
-	} catch {
-		throw new Error("--path must be an existing directory");
-	}
-	// What Git says the worktree root is there, read-only, as an observation to compare later. Not finding one is not a failure.
-	const inspector = new GitProjectInspectorV0({ cwd: path });
-	let observedGitRoot: string | null = null;
-	try {
-		const overview = await inspector.overview();
-		observedGitRoot = overview.state === "ready" && overview.repository !== null ? overview.repository.root : null;
-	} finally {
-		inspector.dispose();
-	}
-	const project = unwrap(new DevelopTasksStoreV0(root).registerProject({ name, path, observedGitRoot }));
+	// The service resolves the path, requires a directory, and asks Git once, read-only, what the worktree root there is (an observation).
+	const project = unwrap(await serviceAt(root).registerProject({ name, path: given }));
+	const path = project.path;
 	print({ project });
 	process.stderr.write(
 		`registered. Start a workbench for it from that directory with: endo harness attach --root ${root} --cwd ${path} --control --workbench --project ${project.id}\nthe workbench may change this project's tasks only when launched in exactly this directory (${path}); from a subdirectory or elsewhere it shows them read-only. Register the subdirectory instead if that is where you work.\n`,
@@ -100,7 +107,7 @@ async function projectAdd(argv: readonly string[]): Promise<void> {
 
 function projectList(argv: readonly string[]): void {
 	const { root } = flagsOf(argv, [], PROJECT_USAGE);
-	const file = readFile(new DevelopTasksStoreV0(root));
+	const file = unwrapRead(serviceAt(root).read());
 	print({
 		revision: file.revision,
 		projects: file.projects.map((p) => ({
@@ -131,9 +138,7 @@ function taskList(argv: readonly string[]): void {
 	const { root, flags } = flagsOf(argv, ["--project"], TASK_USAGE);
 	const project = flags.get("--project");
 	if (project === undefined) throw new TypeError(TASK_USAGE);
-	const file = readFile(new DevelopTasksStoreV0(root));
-	if (!file.projects.some((p) => p.id === project)) throw new Error(REFUSALS["not-found"]);
-	print({ tasks: file.tasks.filter((t) => t.projectId === project).map(summary) });
+	print({ tasks: unwrapRead(serviceAt(root).tasks(project)).map(summary) });
 }
 
 function taskAdd(argv: readonly string[]): void {
@@ -142,7 +147,7 @@ function taskAdd(argv: readonly string[]): void {
 	const title = flags.get("--title");
 	if (project === undefined || title === undefined) throw new TypeError(TASK_USAGE);
 	const task = unwrap(
-		new DevelopTasksStoreV0(root).createTask(project, {
+		serviceAt(root).createTask(project, {
 			title,
 			description: flags.get("--description"),
 			acceptance: flags.get("--acceptance"),
@@ -157,18 +162,17 @@ function taskStatus(argv: readonly string[]): void {
 	const taskId = flags.get("--task");
 	const to = flags.get("--to");
 	if (project === undefined || taskId === undefined || to === undefined) throw new TypeError(TASK_USAGE);
-	const store = new DevelopTasksStoreV0(root);
+	const service = serviceAt(root);
 	let revision: number;
 	if (flags.has("--revision")) {
 		const given = flags.get("--revision") as string;
 		if (!/^(0|[1-9][0-9]{0,9})$/.test(given)) throw new TypeError("--revision is a non-negative integer");
 		revision = Number(given);
 	} else {
-		const found = readFile(store).tasks.find((t) => t.id === taskId && t.projectId === project);
-		if (found === undefined) throw new Error(REFUSALS["not-found"]);
-		revision = found.revision;
+		// Without --revision: the revision read now, so the change is still refused if the task changes between this read and the write.
+		revision = unwrapRead(service.task(project, taskId)).revision;
 	}
-	print({ task: summary(unwrap(store.setStatus(project, taskId, revision, to, flags.get("--note")))) });
+	print({ task: summary(unwrap(service.setStatus(project, taskId, revision, to, flags.get("--note")))) });
 }
 
 export const PROJECT_COMMANDS_V0: Record<string, (argv: readonly string[]) => void | Promise<void>> = {

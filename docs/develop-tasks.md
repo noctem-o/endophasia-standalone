@@ -59,6 +59,13 @@ A mismatch or a missing directory makes the workspace **read-only**: the tasks a
 the terminal say why. A registered path grants no access to anything: it is compared and displayed, never opened, listed or run, and a task's text
 is never used to pick a file, a tool or a command.
 
+## One implementation, two callers
+
+The CLI and the workbench's routes are both thin translations around one shared workspace service,
+[`runtime/contracts/develop-workspace.ts`](../runtime/contracts/develop-workspace.ts). It owns registration, the read model, the writable gate and session
+references, and it reaches the file only through the store described below. Its trusted-caller boundary, who authorises what, and what it
+leaves for later are in [develop-workspace-service.md](develop-workspace-service.md).
+
 ## Where it lives, and what is in it
 
 `<root>/develop/tasks.json` (`endo.develop-tasks.v0`), beside the evidence and never inside it: it is not an event, is never appended to the event
@@ -96,7 +103,7 @@ fetches each Studio read route family (the snapshot, the session list and one re
 
 ## Authority
 
-The routes are inside the existing workbench broker (`adapters/pi/workbench-tasks.ts`), so they pass every guard the broker's routes pass: Host,
+The routes are inside the existing workbench broker (`adapters/pi/workbench-tasks.ts`, a translation layer over the shared service), so they pass every guard the broker's routes pass: Host,
 Origin and Fetch Metadata, an exact same-origin `Origin`, `application/json` and the 40 KiB body bound for a `POST`, and the **grant** from the pairing
 code. There is no new route family and no new capability:
 
