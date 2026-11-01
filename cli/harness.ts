@@ -67,7 +67,8 @@ function parse(argv: readonly string[], usage: string, allowProject = false): Pa
 			continue;
 		}
 		if (!flag.startsWith("--")) throw new TypeError(usage);
-		if (!VALUE_FLAGS.has(flag) || (flag === "--project" && !allowProject)) throw new TypeError(`unknown flag ${flag}`);
+		if (!VALUE_FLAGS.has(flag) || (flag === "--project" && !allowProject))
+			throw new TypeError(`unknown flag ${flag}`);
 		const value = args.shift();
 		if (value === undefined) throw new TypeError(`the flag ${flag} needs a value`);
 		flags.set(flag, value);

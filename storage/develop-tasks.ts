@@ -32,7 +32,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
 	checkEndoDevelopTextV0,
 	ENDO_DEVELOP_TASK_LIMITS_V0,
@@ -211,7 +211,12 @@ export class DevelopTasksStoreV0 {
 	#ensureDirectory(): boolean {
 		try {
 			const existing = lstatSync(this.#dir, { throwIfNoEntry: false });
-			if (existing === undefined) mkdirSync(this.#dir, { mode: 0o700 });
+			if (existing === undefined) {
+				// A fresh store root may not exist yet. Its missing parents are made the ordinary way; only `develop/` is held to 0700, and a
+				// link in the way of `develop/` itself is still refused by the lstat above and the check below.
+				mkdirSync(dirname(this.#dir), { recursive: true });
+				mkdirSync(this.#dir, { mode: 0o700 });
+			}
 			return lstatSync(this.#dir).isDirectory();
 		} catch {
 			return false;

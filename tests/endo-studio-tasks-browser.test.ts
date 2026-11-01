@@ -421,6 +421,41 @@ suite("the operator's journey through a project and its tasks (Instrument)", () 
 		);
 	});
 
+	it("does not let words be typed into a form while its save is in flight, so none are lost when it succeeds", async () => {
+		const api = await launch(1440, 900);
+		const { page } = api;
+		await ready(page);
+		await openTab(page);
+		// Hold the create request in the page until released, as a slow disk or a busy lock would.
+		await page.eval(`(() => {
+			const real = window.fetch.bind(window);
+			window.__release = null;
+			window.fetch = (input, init) => {
+				const url = String(input instanceof Request ? input.url : input);
+				if (!url.includes("workspace/tasks/create")) return real(input, init);
+				return new Promise((resolve, reject) => {
+					window.__release = () => real(input, init).then(resolve, reject);
+				});
+			};
+		})()`);
+		await fill(page, "[data-testid=task-title-input]", "Held while saving");
+		await page.click("[data-testid=task-save]");
+		await page.waitFor("window.__release !== null");
+		for (const field of ["title", "description", "acceptance"]) {
+			expect(
+				await page.eval<boolean>(`document.querySelector('[data-testid=task-${field}-input]').readOnly`),
+				field,
+			).toBe(true);
+		}
+		expect(await page.eval<boolean>("document.querySelector('[data-testid=task-save]').disabled")).toBe(true);
+		await page.eval("window.__release()");
+		await page.waitFor("document.querySelector('[data-testid=task-title]')?.textContent === 'Held while saving'");
+		// Saved: the form is gone, and what was saved is what was in the field when Save was pressed.
+		expect(await page.eval<boolean>("document.querySelector('[data-testid=task-create-form]') === null")).toBe(true);
+		const stored = new DevelopTasksStoreV0(api.state.root).read();
+		expect(stored.ok && stored.file.tasks.map((t) => t.title)).toEqual(["Held while saving"]);
+	});
+
 	it("links the current session as a reference, and shows it as an earlier launch after a restart", async () => {
 		const first = await launch(1440, 900);
 		await ready(first.page);

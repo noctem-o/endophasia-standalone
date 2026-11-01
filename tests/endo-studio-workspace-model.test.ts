@@ -127,6 +127,14 @@ describe("the wire gate", () => {
 			readWorkspace(view({ tasks: [task(1, { sessions: [{ ...ref, sessionId: "endo.session.pi.x" }] })] })),
 		).toBeNull();
 		expect(readWorkspace(view({ tasks: [task(1, { sessions: [{ ...ref, relation: "live" }] })] }))).toBeNull();
+		// An attachment name is the registry's dotted kind (up to 128 characters), not a short label.
+		const long = `pi.${"long-".repeat(23)}x`;
+		expect(readWorkspace(view({ tasks: [task(1, { sessions: [{ ...ref, attachment: long }] })] }))).not.toBeNull();
+		for (const attachment of [`${long}${"y".repeat(40)}`, "Pi Default", "pi..default", ""])
+			expect(
+				readWorkspace(view({ tasks: [task(1, { sessions: [{ ...ref, attachment }] })] })),
+				attachment,
+			).toBeNull();
 	});
 
 	it("knows the workbench's one constant answer for 'no project', and no other", () => {

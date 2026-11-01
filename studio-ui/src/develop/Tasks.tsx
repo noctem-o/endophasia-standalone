@@ -551,14 +551,23 @@ function TaskForm({
 	const valid = title.length > 0 && title.length <= LIMITS.title && !/[\u0000-\u001f]/.test(draft.title);
 	const busy = workspace.state.busy;
 	const conflicts = Object.entries(draft.elsewhere) as [keyof typeof FIELD_NAMES, string][];
+	// While a save is in flight the words are the ones being sent: the fields cannot change under it, so a success never discards words
+	// typed after the request was made (a failure re-opens them untouched).
+	const [saving, setSaving] = useState(false);
 	const submit = async () => {
-		const ok =
-			task === undefined
-				? await workspace.create({ ...draft, title })
-				: await workspace.update(task, { ...draft, title });
-		if (ok) {
-			workspace.setDraft(key, null);
-			if (task === undefined) workspace.setComposing(false);
+		if (saving) return;
+		setSaving(true);
+		try {
+			const ok =
+				task === undefined
+					? await workspace.create({ ...draft, title })
+					: await workspace.update(task, { ...draft, title });
+			if (ok) {
+				workspace.setDraft(key, null);
+				if (task === undefined) workspace.setComposing(false);
+			}
+		} finally {
+			setSaving(false);
 		}
 	};
 	const cancel = () => {
@@ -571,7 +580,7 @@ function TaskForm({
 			data-testid={task === undefined ? "task-create-form" : "task-edit-form"}
 			onSubmit={(event) => {
 				event.preventDefault();
-				if (valid && dirty && !busy && !locked) void submit();
+				if (valid && dirty && !busy && !saving && !locked) void submit();
 			}}
 		>
 			<h3>{task === undefined ? (first === true ? "Create the first task" : "New task") : "Edit task"}</h3>
@@ -604,6 +613,7 @@ function TaskForm({
 					data-testid="task-title-input"
 					value={draft.title}
 					maxLength={LIMITS.title}
+					readOnly={saving}
 					onChange={(event) => set({ title: event.currentTarget.value })}
 					// biome-ignore lint/a11y/noAutofocus: only when the operator just asked for a new task
 					autoFocus={task === undefined && workspace.composing}
@@ -616,6 +626,7 @@ function TaskForm({
 					rows={4}
 					value={draft.description}
 					maxLength={LIMITS.text}
+					readOnly={saving}
 					onChange={(event) => set({ description: event.currentTarget.value })}
 				/>
 			</label>
@@ -626,6 +637,7 @@ function TaskForm({
 					rows={3}
 					value={draft.acceptance}
 					maxLength={LIMITS.text}
+					readOnly={saving}
 					onChange={(event) => set({ acceptance: event.currentTarget.value })}
 				/>
 			</label>
@@ -640,7 +652,7 @@ function TaskForm({
 					type="submit"
 					className="btn primary"
 					data-testid="task-save"
-					disabled={!valid || !dirty || busy || locked}
+					disabled={!valid || !dirty || busy || saving || locked}
 				>
 					{busy ? "Saving…" : task === undefined ? "Create task" : "Save changes"}
 				</button>

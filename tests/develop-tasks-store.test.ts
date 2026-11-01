@@ -1,6 +1,6 @@
 // The DEVELOP task store (storage/develop-tasks.ts): what survives a restart, what it refuses, and what a crash, a second writer, a link
 // or a damaged file cannot make it do. Real files in a temporary store root; synthetic text only.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -83,6 +83,29 @@ describe("tasks survive a restart and keep their words", () => {
 		expect(readdirSync(join(root, "develop"))).toEqual(["tasks.json"]);
 		expect(readFileSync(join(root, "events", "events.log"), "utf8")).toBe("evidence");
 		expect(readdirSync(root).sort()).toEqual(["develop", "events"]);
+	});
+
+	it("registers the first project under a store root that does not exist yet", () => {
+		const parent = fresh();
+		const root = join(parent, "not", "yet", "there");
+		const { store } = registered(root);
+		expect(statSync(join(root, "develop")).mode & 0o777).toBe(0o700);
+		expect(readdirSync(root)).toEqual(["develop"]);
+		const read = store.read();
+		expect(read.ok && read.file.projects).toHaveLength(1);
+	});
+
+	it("still refuses a develop directory that is a link, even when the root had to be made", () => {
+		const root = fresh();
+		const elsewhere = fresh();
+		symlinkSync(elsewhere, join(root, "develop"));
+		const attempt = new DevelopTasksStoreV0(root).registerProject({
+			name: "x",
+			path: "/work/x",
+			observedGitRoot: null,
+		});
+		expect(attempt.ok).toBe(false);
+		expect(readdirSync(elsewhere)).toEqual([]);
 	});
 
 	it("a read creates nothing", () => {
@@ -220,14 +243,34 @@ describe("a stale edit is refused, never merged", () => {
 		expect(store.selectTask(other.id, task.id)).toMatchObject({ ok: false, code: "not-found" });
 	});
 
-	it("many processes writing at once lose nothing and corrupt nothing", () => {
+	it("many processes writing at once lose nothing and corrupt nothing", async () => {
 		const root = fresh();
 		const { project } = registered(root);
 		const worker = fileURLToPath(new URL("./fixtures/develop-tasks-writer.ts", import.meta.url));
-		const runs = Array.from({ length: 6 }, (_, n) =>
-			spawnSync(process.execPath, [worker, root, project.id, String(n), "8"], { encoding: "utf8" }),
-		);
-		for (const run of runs) expect(run.status, run.stderr).toBe(0);
+		const go = join(root, "go");
+		// Six real processes, started together: each is loaded and waiting before any is released, so the writes truly contend for the lock.
+		const runs = Array.from({ length: 6 }, (_, n) => {
+			const child = spawn(process.execPath, [worker, root, project.id, String(n), "8", go], {
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+			let stderr = "";
+			child.stderr.on("data", (chunk) => {
+				stderr += String(chunk);
+			});
+			const ready = new Promise<void>((resolve, reject) => {
+				child.stdout.once("data", () => resolve());
+				child.once("error", reject);
+				child.once("close", () => reject(new Error(`writer ${n} ended before it was ready: ${stderr}`)));
+			});
+			const done = new Promise<{ status: number | null; stderr: string }>((resolve) => {
+				child.once("close", (status) => resolve({ status, stderr }));
+			});
+			return { ready, done };
+		});
+		await Promise.all(runs.map((run) => run.ready));
+		writeFileSync(go, "");
+		for (const run of await Promise.all(runs.map((r) => r.done))) expect(run.status, run.stderr).toBe(0);
+		rmSync(go);
 		const read = new DevelopTasksStoreV0(root).read();
 		expect(read.ok).toBe(true);
 		if (!read.ok) return;

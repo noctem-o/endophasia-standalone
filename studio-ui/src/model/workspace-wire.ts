@@ -52,7 +52,8 @@ const reference: Check = (v) =>
 		linkId: hex(16),
 		source: one("pi-live"),
 		alias: eitherNull(oneLine(300)),
-		attachment: oneLine(80),
+		// The harness registry's grammar for an attachment name: a dotted kind, at most 128 characters.
+		attachment: (x) => typeof x === "string" && x.length <= 128 && /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$/.test(x),
 		launchId: hex(16),
 		linkedAtMs: stamp,
 		linkedBy: one("operator"),

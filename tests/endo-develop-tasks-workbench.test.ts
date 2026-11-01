@@ -36,6 +36,7 @@ function launch(
 		launchDirectory?: string;
 		unknownProject?: boolean;
 		withTasks?: boolean;
+		attachment?: string;
 	} = {},
 ) {
 	const root = options.root ?? scratch("endo-wt-root-");
@@ -55,7 +56,7 @@ function launch(
 	const broker = new WorkbenchBrokerV0({
 		session,
 		key: OTHER_KEY,
-		attachment: "pi.default",
+		attachment: options.attachment ?? "pi.default",
 		approver: approval.approver,
 		interventions: desk,
 		aliasOf: (id) => `alias:${id.length}`,
@@ -309,6 +310,26 @@ describe("a session reference is explicit, attributed and scoped to its launch",
 		);
 		expect(removed.tasks[0]!.sessions).toEqual([]);
 		expect(w.session.promptCalls).toEqual([]);
+	});
+
+	it("links a session of an attachment whose name is as long as the registry allows", async () => {
+		// The harness registry accepts a dotted kind of up to 128 characters, so an 81-128 character attachment is a real attachment.
+		const attachment = `pi.${"long-".repeat(23)}x`;
+		expect(attachment.length).toBeGreaterThan(80);
+		expect(attachment.length).toBeLessThanOrEqual(128);
+		const w = launch({ attachment });
+		const grant = await w.pair();
+		const task = view(await w.call("POST", "workspace/tasks/create", { title: "t" }, grant)).tasks[0]!;
+		const linked = await w.call(
+			"POST",
+			"workspace/tasks/link-session",
+			{ taskId: task.id, expectedRevision: task.revision },
+			grant,
+		);
+		expect(linked.status).toBe(200);
+		expect(view(linked).tasks[0]!.sessions[0]).toMatchObject({ attachment, relation: "current" });
+		const reread = view(await w.call("GET", "workspace", null, grant));
+		expect(reread.tasks[0]!.sessions[0]!.attachment).toBe(attachment);
 	});
 
 	it("is historical after a restart, even when the new launch serves the same Pi session id", async () => {

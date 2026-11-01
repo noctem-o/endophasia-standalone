@@ -9,6 +9,7 @@
 // a transcript, model-provided reasoning, a pairing code or grant, an approval phrase, a provider credential, a prompt. The text fields are
 // the operator's own words and may be private; they are shown only to a paired workbench page and never through `endo studio`.
 
+import { isWellFormedKindV0 } from "./identity.ts";
 import {
 	defineEndoVersionTableV0,
 	EndoInvalidRecordV0,
@@ -204,6 +205,11 @@ const text = (v: unknown, rule: EndoTextRuleV0, what: string): string => {
 	if (rule !== "text" && checked.text !== v) return bad(`${what} is not trimmed`);
 	return checked.text;
 };
+/** The harness registry's own grammar for an attachment name (a dotted kind of at most 128 characters), not the 80-character project-name bound. */
+const attachmentName = (v: unknown): string =>
+	typeof v === "string" && isWellFormedKindV0(v)
+		? v
+		: bad("a session reference's attachment is not an attachment name");
 const nullable = <T>(v: unknown, read: (x: unknown) => T): T | null => (v === null ? null : read(v));
 
 function ref(v: unknown): EndoDevelopSessionRefV0 {
@@ -223,7 +229,7 @@ function ref(v: unknown): EndoDevelopSessionRefV0 {
 		linkId: r.linkId as string,
 		source: "pi-live",
 		sessionId: r.sessionId as string,
-		attachment: text(r.attachment, "name", "a session reference's attachment"),
+		attachment: attachmentName(r.attachment),
 		launchId: r.launchId as string,
 		linkedAtMs: stamp(r.linkedAtMs, "linkedAtMs"),
 		linkedBy: "operator",
