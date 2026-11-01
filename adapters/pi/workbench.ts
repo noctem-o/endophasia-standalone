@@ -52,8 +52,8 @@ import type {
 	EndoWorkbenchProjectV0,
 } from "../../protocol/workbench-project.ts";
 import { canonicalEndoJsonV0 } from "../../runtime/contracts/canonical-json.ts";
+import type { DevelopLaunchHostV0, DevelopLaunchWorkspaceV0 } from "../../runtime/contracts/develop-workspace.ts";
 import type { EndoDigestKeyV0 } from "../../runtime/contracts/keyed-digest.ts";
-import type { DevelopTasksStoreV0 } from "../../storage/develop-tasks.ts";
 import type { RpcEventV0 } from "../rpc-jsonl/rpc-connection.ts";
 import { LIVE_TRANSCRIPT_SCHEMA_V1, LiveTranscriptV0 } from "./live-transcript.ts";
 import { piEndoSessionIdV0 } from "./mapping.ts";
@@ -128,10 +128,12 @@ export interface WorkbenchOptionsV0 {
 	/** Read-only project context (the launch directory's Git state). Without it the project routes do not exist. */
 	project?: WorkbenchProjectSourceV0;
 	/**
-	 * The operator's project and tasks (adapters/pi/workbench-tasks.ts): the store, the project the operator named for this launch with `--project`,
-	 * and the directory the process was launched in. Without it the workspace routes answer one constant. It adds no command.
+	 * The operator's project and tasks (adapters/pi/workbench-tasks.ts over runtime/contracts/develop-workspace.ts): opens the launch scope of the
+	 * project the operator named for this launch with `--project`, from the directory the process was launched in. The broker supplies the
+	 * host's facts (its launch id, attachment and connected session) from its own state; the broker never holds the operator scope or the
+	 * store. Without it the workspace routes answer one constant. It adds no command.
 	 */
-	tasks?: { store: DevelopTasksStoreV0; projectId: string; launchDirectory: string };
+	tasks?: { open(host: DevelopLaunchHostV0): DevelopLaunchWorkspaceV0 };
 	/** The presented alias of a session id (the cockpit's own), so the page can link the live session to its recording. */
 	aliasOf?: (sessionId: string) => string;
 	now?: () => number;
@@ -245,18 +247,23 @@ export class WorkbenchBrokerV0 implements EndoCockpitWorkbenchV0 {
 		this.#tasks =
 			options.tasks === undefined
 				? null
-				: new WorkbenchTasksV0({
-						...options.tasks,
-						launchId: this.launchId,
-						attachment: options.attachment,
-						connected: () => {
-							const s = options.session;
-							return !this.#disposed && !this.#ended && s.live && s.piSessionId !== null
-								? { sessionId: piEndoSessionIdV0(s.piSessionId) }
-								: null;
-						},
-						...(options.aliasOf === undefined ? {} : { aliasOf: options.aliasOf }),
-					});
+				: new WorkbenchTasksV0(
+						options.tasks.open({
+							launchId: this.launchId,
+							attachment: options.attachment,
+							// The one session this host can vouch for: its own Pi session, by the canonical mapping, while it is connected.
+							session: {
+								source: "pi-live",
+								current: () => {
+									const s = options.session;
+									return !this.#disposed && !this.#ended && s.live && s.piSessionId !== null
+										? { sessionId: piEndoSessionIdV0(s.piSessionId) }
+										: null;
+								},
+							},
+							...(options.aliasOf === undefined ? {} : { aliasOf: options.aliasOf }),
+						}),
+					);
 		// The desk records consequences when it finishes: a prompt still waiting for the terminal is withdrawn then too.
 		options.interventions?.onFinishing(() => this.beginClose());
 		options.session.onLiveEvent = (event) => {

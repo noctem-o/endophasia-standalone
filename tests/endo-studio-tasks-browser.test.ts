@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { GitProjectInspectorV0 } from "../adapters/git/project-inspector.ts";
 import { WorkbenchBrokerV0 } from "../adapters/pi/workbench.ts";
 import { loadEndoStudioUiFilesV0 } from "../cockpit-http/studio-ui.ts";
+import { DevelopWorkspaceServiceV0 } from "../runtime/contracts/develop-workspace.ts";
 import { DevelopTasksStoreV0 } from "../storage/develop-tasks.ts";
 import { Browser, findBrowser, type Page } from "./cockpit-browser.ts";
 import { removeTempRoots } from "./cockpit-fixtures.ts";
@@ -104,9 +105,14 @@ async function launch(
 			? {}
 			: {
 					tasks: {
-						store: new DevelopTasksStoreV0(root),
-						projectId: mode === "unknown" ? `endo.project.${"0".repeat(32)}` : project,
-						launchDirectory: other,
+						open: (host) =>
+							new DevelopWorkspaceServiceV0(new DevelopTasksStoreV0(root)).forLaunch(
+								{
+									projectId: mode === "unknown" ? `endo.project.${"0".repeat(32)}` : project,
+									launchDirectory: other,
+								},
+								host,
+							),
 					},
 				}),
 	});

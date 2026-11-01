@@ -10,39 +10,20 @@
 //   POST workspace/tasks/link-session   {taskId, expectedRevision}                      reference the session THIS workbench serves.
 //   POST workspace/tasks/unlink-session {taskId, expectedRevision, linkId}
 //
-// What none of them can do: send a prompt, steer, queue or stop, start or resume or select a session, open or write a file, run Git or a
-// shell, read the transcript, or approve anything. A task's text is never used to choose a file, a tool or a command; the project's
-// registered path is compared with the launch directory and is otherwise only shown. The terminal approval and the pairing grant that govern
-// runtime interventions are unchanged, and this metadata is not a second approval mechanism.
+// It is a TRANSLATION layer only: it checks the shape of the request (exact keys, an id is a string, a revision is a count), calls the shared
+// workspace service (runtime/contracts/develop-workspace.ts), and turns its answer into a status code. The meaning of every operation (what is
+// writable, what a transition may be, what a stale revision is, how a session reference is built and when it is current) is the service's,
+// the same one the `endo` CLI uses. The authorisation is the broker's grant, checked before this module is reached.
 //
-// The project is the one the OPERATOR registered (`endo project add`) and named for this launch (`--project`). The page names a task by id
-// and a revision; it never names a project, a path, a session or a launch. A session reference is built here, from the broker's own state.
+// What none of them can do: send a prompt, steer, queue or stop, start or resume or select a session, open or write a file, run Git or a
+// shell, read the transcript, or approve anything. The page names a task by id and a revision; it never names a project, a path, a session
+// or a launch: those are the launch scope's, fixed by the operator's `--project`, the launch directory and the broker's own state.
 
-import { realpathSync } from "node:fs";
-import {
-	ENDO_DEVELOP_WORKSPACE_SCHEMA_V0,
-	ENDO_LAUNCH_ID_PATTERN_V0,
-	type EndoDevelopProjectV0,
-	type EndoDevelopSessionRefV0,
-	type EndoDevelopTaskV0,
-	type EndoDevelopTaskViewV0,
-	type EndoDevelopWorkspaceViewV0,
-	endoDevelopNextStatusesV0,
-} from "../../protocol/develop-tasks.ts";
-import type { DevelopTasksStoreV0, EndoTasksRefusalV0, EndoTasksResultV0 } from "../../storage/develop-tasks.ts";
-
-export interface WorkbenchTasksOptionsV0 {
-	store: DevelopTasksStoreV0;
-	/** The project the operator named for this launch (`--project`). The page cannot change it. */
-	projectId: string;
-	/** The working directory the attached process was launched in (the same one the Git context reads). */
-	launchDirectory: string;
-	launchId: string;
-	attachment: string;
-	/** The connected session, from the broker's own state: null when there is none or the workbench is over. */
-	connected(): { sessionId: string } | null;
-	aliasOf?: (sessionId: string) => string;
-}
+import type {
+	DevelopLaunchWorkspaceV0,
+	DevelopWorkspaceRefusalV0,
+	DevelopWorkspaceResultV0,
+} from "../../runtime/contracts/develop-workspace.ts";
 
 const reply = (status: number, body: unknown) => ({ status, body });
 const refuse = (status: number, error: string) => reply(status, { error });
@@ -54,7 +35,7 @@ function keysOk(body: Record<string, unknown>, required: readonly string[], opti
 	return required.every((k) => keys.includes(k)) && keys.every((k) => required.includes(k) || optional.includes(k));
 }
 
-const HTTP: Record<EndoTasksRefusalV0, [number, string]> = {
+const HTTP: Record<DevelopWorkspaceRefusalV0, [number, string]> = {
 	"not-found": [404, "not-found"],
 	"stale-revision": [409, "stale-revision"],
 	"invalid-transition": [409, "invalid-transition"],
@@ -64,114 +45,24 @@ const HTTP: Record<EndoTasksRefusalV0, [number, string]> = {
 	unreadable: [409, "unreadable"],
 	busy: [503, "busy"],
 	"storage-failed": [503, "storage-failed"],
-};
-
-const realpath = (path: string): string | null => {
-	try {
-		return realpathSync(path);
-	} catch {
-		return null;
-	}
+	"read-only": [409, "read-only"],
+	"no-session": [409, "no-session"],
+	"unsupported-source": [409, "unsupported-source"],
+	unavailable: [503, "unavailable"],
+	// Registration is the CLI's alone; a launch scope cannot reach it.
+	"not-a-directory": [400, "bad-request"],
 };
 
 export class WorkbenchTasksV0 {
-	readonly #o: WorkbenchTasksOptionsV0;
+	readonly #workspace: DevelopLaunchWorkspaceV0;
 
-	constructor(options: WorkbenchTasksOptionsV0) {
-		this.#o = options;
+	constructor(workspace: DevelopLaunchWorkspaceV0) {
+		this.#workspace = workspace;
 	}
 
 	/** The workspace as the page sees it, read from the file now. */
-	view(): EndoDevelopWorkspaceViewV0 {
-		const o = this.#o;
-		const base = {
-			schemaVersion: ENDO_DEVELOP_WORKSPACE_SCHEMA_V0 as typeof ENDO_DEVELOP_WORKSPACE_SCHEMA_V0,
-			available: true as const,
-			launchId: o.launchId,
-		};
-		const read = o.store.read();
-		if (!read.ok)
-			return {
-				...base,
-				state: "unreadable",
-				reason: read.reason,
-				revision: 0,
-				project: null,
-				writable: false,
-				readOnlyReason: "unreadable",
-				linkable: false,
-				tasks: [],
-				selectedTaskId: null,
-			};
-		const project = read.file.projects.find((p) => p.id === o.projectId);
-		if (project === undefined)
-			return {
-				...base,
-				state: "unknown-project",
-				reason: null,
-				revision: read.file.revision,
-				project: null,
-				writable: false,
-				readOnlyReason: "unknown-project",
-				linkable: false,
-				tasks: [],
-				selectedTaskId: null,
-			};
-		const launch = this.#launchRelation(project);
-		const connected = o.connected();
-		// The grant that reaches this route ends with the session (adapters/pi/workbench.ts), so "over" is never answered here.
-		const writable = launch === "same";
-		return {
-			...base,
-			state: "ready",
-			reason: null,
-			revision: read.file.revision,
-			project: {
-				id: project.id,
-				name: project.name,
-				path: project.path,
-				observedGitRoot: project.observedGitRoot,
-				launch,
-			},
-			writable,
-			readOnlyReason: writable ? null : launch === "missing" ? "project-missing" : "project-mismatch",
-			linkable: writable && connected !== null,
-			tasks: read.file.tasks
-				.filter((t) => t.projectId === project.id)
-				.map((t) => this.#taskView(t, connected?.sessionId ?? null)),
-			selectedTaskId: project.selectedTaskId,
-		};
-	}
-
-	/** The registered directory against the directory this process was launched in (links resolved on both sides, at this moment). */
-	#launchRelation(project: EndoDevelopProjectV0): "same" | "different" | "missing" {
-		const registered = realpath(project.path);
-		if (registered === null) return "missing";
-		const launched = realpath(this.#o.launchDirectory);
-		return launched === registered ? "same" : "different";
-	}
-
-	#taskView(task: EndoDevelopTaskV0, connectedSession: string | null): EndoDevelopTaskViewV0 {
-		const o = this.#o;
-		return {
-			...task,
-			next: [...endoDevelopNextStatusesV0(task.status)],
-			sessions: task.sessions.map((s) => ({
-				linkId: s.linkId,
-				source: s.source,
-				alias: o.aliasOf?.(s.sessionId) ?? null,
-				attachment: s.attachment,
-				launchId: s.launchId,
-				linkedAtMs: s.linkedAtMs,
-				linkedBy: s.linkedBy,
-				// Current only if the reference was made in THIS launch, to the session connected now. A Pi session id can survive a
-				// restart; the launch cannot, so a reference from another launch is a historical claim whatever the ids say.
-				relation:
-					s.launchId === o.launchId && connectedSession !== null && s.sessionId === connectedSession
-						? "current"
-						: "historical",
-			})),
-		};
+	view() {
+		return this.#workspace.view();
 	}
 
 	/** A route under `workspace/`. The broker has already checked the grant. */
@@ -189,26 +80,19 @@ export class WorkbenchTasksV0 {
 		}
 		if (a !== "tasks" || b === undefined || more.length > 0 || query !== "") return refuse(404, "not-found");
 		if (!isRecord(body)) return refuse(400, "bad-request");
-		const view = this.view();
-		// Reading is allowed in every state; changing is allowed only when the file is readable, the project is the one this process was
-		// launched in, and the workbench is not over. A stale or mismatched association never writes.
-		if (!view.writable) return reply(409, { error: "read-only", reason: view.readOnlyReason });
-		const o = this.#o;
-		const projectId = o.projectId;
-		const done = <T>(result: EndoTasksResultV0<T>) => {
-			if (result.ok) return reply(200, this.view());
-			const [status, error] = HTTP[result.code];
-			return reply(status, result.reason === undefined ? { error } : { error, reason: result.reason });
-		};
+		const w = this.#workspace;
+		// Reading is allowed in every state; changing is allowed only when the file is readable and the project is the one this process was
+		// launched in. Asked first, before the body's shape, so a read-only workspace answers every change the same way.
+		const refused = w.writeRefusal();
+		if (refused !== null) return this.#answer(refused);
 		const revisionOf = (v: unknown): number =>
 			typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : Number.NaN;
 		const taskOf = (v: unknown): string | null => (typeof v === "string" ? v : null);
 		switch (b) {
 			case "create": {
 				if (!keysOk(body, ["title"], ["description", "acceptance"])) return refuse(400, "bad-request");
-				return done(
-					o.store.createTask(
-						projectId,
+				return this.#answer(
+					w.createTask(
 						{ title: body.title, description: body.description, acceptance: body.acceptance },
 						{ select: true },
 					),
@@ -219,8 +103,8 @@ export class WorkbenchTasksV0 {
 					return refuse(400, "bad-request");
 				const id = taskOf(body.taskId);
 				if (id === null) return refuse(400, "bad-request");
-				return done(
-					o.store.updateTask(projectId, id, revisionOf(body.expectedRevision), {
+				return this.#answer(
+					w.updateTask(id, revisionOf(body.expectedRevision), {
 						title: body.title,
 						description: body.description,
 						acceptance: body.acceptance,
@@ -231,39 +115,35 @@ export class WorkbenchTasksV0 {
 				if (!keysOk(body, ["taskId", "expectedRevision", "to"], ["note"])) return refuse(400, "bad-request");
 				const id = taskOf(body.taskId);
 				if (id === null) return refuse(400, "bad-request");
-				return done(o.store.setStatus(projectId, id, revisionOf(body.expectedRevision), body.to, body.note));
+				return this.#answer(w.setStatus(id, revisionOf(body.expectedRevision), body.to, body.note));
 			}
 			case "select": {
 				if (!keysOk(body, ["taskId"])) return refuse(400, "bad-request");
 				if (body.taskId !== null && typeof body.taskId !== "string") return refuse(400, "bad-request");
-				return done(o.store.selectTask(projectId, body.taskId));
+				return this.#answer(w.selectTask(body.taskId));
 			}
 			case "link-session": {
+				// Nothing the page sent describes the session: the body has a task id and a revision, and no other key is accepted.
 				if (!keysOk(body, ["taskId", "expectedRevision"])) return refuse(400, "bad-request");
 				const id = taskOf(body.taskId);
-				const connected = o.connected();
-				// Nothing is linked to a session that is not connected, and nothing the page said describes the session.
 				if (id === null) return refuse(400, "bad-request");
-				if (connected === null) return refuse(409, "no-session");
-				if (!ENDO_LAUNCH_ID_PATTERN_V0.test(o.launchId)) return refuse(503, "unavailable");
-				const ref: Omit<EndoDevelopSessionRefV0, "linkId" | "linkedAtMs"> = {
-					source: "pi-live",
-					sessionId: connected.sessionId,
-					attachment: o.attachment,
-					launchId: o.launchId,
-					linkedBy: "operator",
-					via: "workbench",
-				};
-				return done(o.store.linkSession(projectId, id, revisionOf(body.expectedRevision), ref));
+				return this.#answer(w.linkCurrentSession(id, revisionOf(body.expectedRevision)));
 			}
 			case "unlink-session": {
 				if (!keysOk(body, ["taskId", "expectedRevision", "linkId"])) return refuse(400, "bad-request");
 				const id = taskOf(body.taskId);
 				if (id === null || typeof body.linkId !== "string") return refuse(400, "bad-request");
-				return done(o.store.unlinkSession(projectId, id, revisionOf(body.expectedRevision), body.linkId));
+				return this.#answer(w.unlinkSession(id, revisionOf(body.expectedRevision), body.linkId));
 			}
 			default:
 				return refuse(404, "not-found");
 		}
+	}
+
+	/** A change made: the whole workspace again. A refusal: its status code, its closed name, and its closed reason when it has one. */
+	#answer<T>(result: DevelopWorkspaceResultV0<T>): { status: number; body: unknown } {
+		if (result.ok) return reply(200, this.view());
+		const [status, error] = HTTP[result.code];
+		return reply(status, result.reason === undefined ? { error } : { error, reason: result.reason });
 	}
 }

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { piEndoSessionIdV0 } from "../adapters/pi/mapping.ts";
 import { WorkbenchBrokerV0 } from "../adapters/pi/workbench.ts";
 import type { EndoDevelopWorkspaceViewV0 } from "../protocol/develop-tasks.ts";
+import { DevelopWorkspaceServiceV0 } from "../runtime/contracts/develop-workspace.ts";
 import { DevelopTasksStoreV0 } from "../storage/develop-tasks.ts";
 import { event, ingestAll, removeTempRoots, tempRoot } from "./cockpit-fixtures.ts";
 import { capabilityOf, get, send, serve, stopServers } from "./cockpit-http-fixtures.ts";
@@ -65,9 +66,14 @@ function launch(
 			? {}
 			: {
 					tasks: {
-						store,
-						projectId: options.unknownProject ? `endo.project.${"0".repeat(32)}` : projectId,
-						launchDirectory: options.launchDirectory ?? repo,
+						open: (host) =>
+							new DevelopWorkspaceServiceV0(store).forLaunch(
+								{
+									projectId: options.unknownProject ? `endo.project.${"0".repeat(32)}` : projectId,
+									launchDirectory: options.launchDirectory ?? repo,
+								},
+								host,
+							),
 					},
 				}),
 	});
