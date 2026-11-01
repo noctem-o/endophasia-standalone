@@ -23,7 +23,8 @@ import { fileURLToPath } from "node:url";
 import { endoStudioHelpV0 } from "./help.ts";
 import { takeEndoRootV0 } from "./root-args.ts";
 
-export const ENDO_STUDIO_USAGE_V0 = "usage: endo studio [<root>] [--root dir] [--port n] [--key-file path]";
+export const ENDO_STUDIO_USAGE_V0 =
+	"usage: endo studio [<root>] [--root dir] [--port n] [--key-file path] [--omp-sessions dir]";
 
 export interface EndoStudioArgsV0 {
 	readonly root: string;
@@ -32,6 +33,8 @@ export interface EndoStudioArgsV0 {
 	readonly port: number;
 	/** The key file named with `--key-file`, or null for the dedicated default. */
 	readonly keyFile: string | null;
+	/** The Oh My Pi sessions directory named with `--omp-sessions`, or null: OMP is observed only when the operator names one. */
+	readonly ompSessions: string | null;
 }
 
 /** A port as written without leading zeros, 0 to 65535: the range the server accepts, enforced before a key is created. */
@@ -50,9 +53,10 @@ export function parseEndoStudioArgsV0(
 	// (which takes `./-x`): reading it as the root would start Studio, and create its key, on the wrong thing.
 	const leading = argv[0];
 	if (leading?.startsWith("-") && !leading.startsWith("--")) throw new TypeError(`unknown option: ${leading}`);
-	const taken = takeEndoRootV0(argv, 0, new Set(["--port", "--key-file"]), env);
+	const taken = takeEndoRootV0(argv, 0, new Set(["--port", "--key-file", "--omp-sessions"]), env);
 	let port: number | undefined;
 	let keyFile: string | undefined;
+	let ompSessions: string | undefined;
 	const value = (rest: readonly string[], index: number, flag: string): string => {
 		const given = rest[index + 1];
 		if (given === undefined || given.startsWith("--")) throw new TypeError(`the flag ${flag} needs a value`);
@@ -72,10 +76,21 @@ export function parseEndoStudioArgsV0(
 			keyFile = value(taken.rest, index, "--key-file");
 			if (keyFile.length === 0) throw new TypeError("the key file is empty");
 			index += 1;
+		} else if (arg === "--omp-sessions") {
+			if (ompSessions !== undefined) throw new TypeError("--omp-sessions was given more than once");
+			ompSessions = value(taken.rest, index, "--omp-sessions");
+			if (ompSessions.length === 0) throw new TypeError("the OMP sessions directory is empty");
+			index += 1;
 		} else if (arg.startsWith("-")) throw new TypeError(`unknown option: ${arg}`);
 		else throw new TypeError(`unexpected argument: ${arg} (a store is named first, or with --root)`);
 	}
-	return { root: taken.root, defaultNote: taken.defaultNote, port: port ?? 0, keyFile: keyFile ?? null };
+	return {
+		root: taken.root,
+		defaultNote: taken.defaultNote,
+		port: port ?? 0,
+		keyFile: keyFile ?? null,
+		ompSessions: ompSessions ?? null,
+	};
 }
 
 /**
@@ -124,12 +139,25 @@ export async function studioCommand(argv: readonly string[]): Promise<void> {
 			"studio: the Studio frontend's files were not found next to this command. An installed package carries them in dist/studio-ui (reinstall it); in a checkout run `npm run build:studio-ui` first",
 		);
 	const { launchEndoCockpitV0, serveUntilSignalV0 } = await import("../cockpit-http/host.ts");
+	// OMP's saved sessions, only from the directory the operator named: read when the page asks, never written, never run.
+	let omp: Parameters<typeof launchEndoCockpitV0>[0]["omp"];
+	if (args.ompSessions !== null) {
+		const { OmpSavedSessionObserverV0, resolveOmpRootV0 } = await import("../adapters/omp/observer.ts");
+		let root: string;
+		try {
+			root = resolveOmpRootV0(args.ompSessions);
+		} catch (error) {
+			throw new Error(startupFailure(error, args.port));
+		}
+		omp = { root, open: (key) => new OmpSavedSessionObserverV0({ root, key }) };
+	}
 	let launched: Awaited<ReturnType<typeof launchEndoCockpitV0>>;
 	try {
 		launched = await launchEndoCockpitV0({
 			root: args.root,
 			port: args.port,
 			...(args.keyFile === null ? {} : { keyFile: args.keyFile }),
+			...(omp === undefined ? {} : { omp }),
 			uiDirectory,
 			onKey: (key) => {
 				if (key.created) process.stderr.write(`studio: created Studio's own digest key ${key.path}\n`);
@@ -146,6 +174,10 @@ export async function studioCommand(argv: readonly string[]): Promise<void> {
 	process.stderr.write(
 		"studio: the address below is private to this launch; anyone who can read it can read what this store records. Ctrl-C stops Studio\n",
 	);
+	if (omp !== undefined)
+		process.stderr.write(
+			"studio: observing Oh My Pi's saved sessions in the directory you named: read-only, metadata only, a snapshot each time the page asks. It cannot control OMP or tell whether OMP is running\n",
+		);
 	process.stdout.write(`Endophasia Studio (read-only, loopback only): ${server.baseUrl}/\n`);
 	await stopped;
 	process.stderr.write("studio: stopped\n");

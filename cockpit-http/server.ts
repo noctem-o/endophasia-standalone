@@ -40,6 +40,11 @@ import {
 	readEndoCockpitSnapshotV0,
 	readEndoCockpitTimelineV0,
 } from "../cockpit/index.ts";
+import {
+	ENDO_OMP_ABSENT_V0,
+	ENDO_OMP_SELECTOR_PATTERN_V0,
+	type EndoOmpObserverV0,
+} from "../protocol/omp-observation.ts";
 import type { EndoCockpitWorkbenchV0 } from "../protocol/workbench-http.ts";
 
 import { readEndoCockpitCompareCandidatesV0, readEndoCockpitSelectedComparisonV0 } from "./candidates.ts";
@@ -161,6 +166,11 @@ export interface EndoCockpitServerOptionsV0 {
 	onError?: (error: unknown) => void;
 	/** The host's command surface (see `EndoCockpitWorkbenchV0`). Absent for a read-only server. */
 	workbench?: EndoCockpitWorkbenchV0;
+	/**
+	 * An observer of Oh My Pi's saved sessions in a directory the OPERATOR named (`endo studio --omp-sessions`). Read-only, metadata only
+	 * (protocol/omp-observation.ts); the server reaches no file itself. Absent: the OMP routes answer one constant.
+	 */
+	omp?: EndoOmpObserverV0;
 }
 
 export interface EndoCockpitServerV0 {
@@ -366,6 +376,25 @@ export async function startEndoCockpitServerV0(options: EndoCockpitServerOptions
 			}
 		}
 		if (segments[0] !== "api" || segments[1] !== "v0") return refuse("not-found");
+		if (segments[2] === "develop" && segments[3] === "omp") {
+			// `develop/omp/sessions` and `develop/omp/session/<selector>`: GET only, no query, a whole fresh read of the files each time.
+			parseQuery(rawQuery, []);
+			const omp = options.omp;
+			if (segments.length === 5 && segments[4] === "sessions") {
+				if (omp === undefined) return { records: [ENDO_OMP_ABSENT_V0], body: ENDO_OMP_ABSENT_V0 };
+				admit();
+				const record = omp.sessions();
+				return { records: [record], body: record };
+			}
+			if (segments.length === 6 && segments[4] === "session") {
+				const selector = segments[5]!;
+				if (omp === undefined || !ENDO_OMP_SELECTOR_PATTERN_V0.test(selector)) return refuse("not-found");
+				admit();
+				const record = omp.session(selector);
+				return record === null ? refuse("not-found") : { records: [record], body: record };
+			}
+			return refuse("not-found");
+		}
 		if (segments[2] === "develop") {
 			try {
 				// `develop/sessions[?cursor=s1-…]` and `develop/session/<selector>[?cursor=a1-…]`: GET only, one verified read each.

@@ -112,8 +112,11 @@ export function Navigator({
 	develop,
 	live,
 	onRecorded,
+	external,
 }: {
 	develop: Develop;
+	/** Sessions of another source observed beside the store (Oh My Pi's saved files): their own group, below the recorded ones. */
+	external?: ReactNode;
 	/** The live session's row, offered by a workbench: a "Connected" group above the recorded sessions. */
 	live?: ReactNode;
 	/** Called when a recorded session is chosen, so the workspace can leave the live view. */
@@ -333,6 +336,7 @@ export function Navigator({
 					)}
 				</>
 			)}
+			{external ?? null}
 		</Panel>
 	);
 }

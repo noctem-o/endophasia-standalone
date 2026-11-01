@@ -105,7 +105,7 @@ Requires Node >= 22.19.0.
 export function endoStudioHelpV0(): string {
 	return `endo studio — Endophasia Studio: a read-only browser interface over a recorded store.
 
-Usage: endo studio [<root>] [--root dir] [--port n] [--key-file path]
+Usage: endo studio [<root>] [--root dir] [--port n] [--key-file path] [--omp-sessions dir]
        endo studio --help | -h
 
 Starts a server on 127.0.0.1 only and prints one private access address for this launch; open it in a browser on this machine.
@@ -122,6 +122,10 @@ Arguments:
                          a free port, so the address differs on every launch.
   --key-file path        the comparison key Studio reads under. Default: cockpit-digest-key beside the installation digest key
                          (see "endo digest-key id"). It may not be the installation key, under any name, nor lie inside the store.
+  --omp-sessions dir     also show Oh My Pi's saved sessions from this directory (OMP's default is ~/.omp/agent/sessions; a
+                         profile or --session-dir moves it). Read-only and metadata only: counts, states, tool and model names,
+                         never a message, a title or a path. It is a snapshot of OMP's files each time the page asks, not a
+                         connection: it cannot control OMP or tell whether OMP is running. Nothing is written there.
 
 Side effects: Studio is read-only with respect to the observed store. The first launch creates its dedicated key file if it
 does not exist (32 random bytes, mode 0600, in a 0700 directory) and says so on stderr; that is the only thing it writes. Help,

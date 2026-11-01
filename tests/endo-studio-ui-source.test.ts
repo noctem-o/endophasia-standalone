@@ -58,6 +58,9 @@ describe("the frontend's source", () => {
 				"develop/DevelopWorkspace.tsx",
 				"develop/Navigator.tsx",
 				"develop/SessionInspector.tsx",
+				"develop/Omp.tsx",
+				"model/omp-wire.ts",
+				"use-omp.ts",
 				"develop/Surface.tsx",
 				"develop/Field.tsx",
 				"develop/FieldCanvas.tsx",
@@ -181,7 +184,11 @@ describe("the frontend's source", () => {
 		expect(api).toMatch(
 			/new URL\(\s*`\.\/api\/v0\/snapshot\?afterSequence=\$\{request\.afterSequence\}&limit=\$\{request\.limit\}`,\s*document\.baseURI/,
 		);
-		expect(api.match(/\/api\//g)?.length).toBe(15);
+		expect(api.match(/\/api\//g)?.length).toBe(17);
+		// Oh My Pi's saved sessions: two fixed GET routes, the second named only by an opaque selector the list gave, gated first.
+		expect(api).toContain("./api/v0/develop/omp/sessions");
+		expect(api).toMatch(/\.\/api\/v0\/develop\/omp\/session\/\$\{request\.selector\}/);
+		expect(api).toMatch(/if \(!ompSelector\(request\.selector\)\)/);
 		// The workbench routes: one fixed prefix, a closed list; the grant only in one header, never in a URL or the body.
 		expect(api.match(/\.\/api\/v0\/workbench\//g)?.length).toBe(10);
 		for (const route of ["status", "transcript", "pair", "prompt/propose", "prompt/discard", "intervention/propose"])
@@ -276,6 +283,16 @@ describe("the frontend's source", () => {
 		expect(sources["use-compare.ts"]).toContain("if (active && !entered.current)");
 		for (const [name, text] of Object.entries(sources))
 			if (name !== "api.ts" && name !== "use-compare.ts") expect(text, name).not.toMatch(/fetchCompare/);
+		// The OMP hook: no timer, one automatic read (the list, at first entry), the rest on the operator's action; only it asks the routes.
+		const ompHook = sources["use-omp.ts"]!;
+		expect(ompHook).not.toMatch(/setTimeout|setInterval|requestAnimationFrame/);
+		expect(ompHook.match(/entered\.current = true;/g)?.length).toBe(1);
+		for (const [name, text] of Object.entries(sources))
+			if (name !== "api.ts" && name !== "use-omp.ts") expect(text, name).not.toMatch(/fetchOmp/);
+		// The OMP views import no api and no workbench command: they read the hook's state and call its read functions.
+		expect(sources["develop/Omp.tsx"]).not.toMatch(
+			/from "\.\.\/api\.ts"|use-workbench|propose|intervene|\.prompt\b|fetch/,
+		);
 		// Only the hook starts a read; a component calls what the hook returns.
 		for (const [name, text] of Object.entries(sources))
 			if (name !== "api.ts" && name !== "use-observe.ts") expect(text, name).not.toMatch(/fetchSnapshot/);

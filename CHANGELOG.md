@@ -30,6 +30,18 @@
   [docs/harness-upgrades.md](docs/harness-upgrades.md#changing-the-identity-basis).
 
 ### Added
+- **Oh My Pi saved sessions in DEVELOP** (`endo studio --omp-sessions <dir>`). This is the first real non-Pi session source. Studio reads
+  OMP's saved JSONL sessions (format 3, title slot v1, checked against the installed OMP 18.14.1) from the directory the operator names,
+  and shows them in DEVELOP as the neutral surface's `omp-saved` source. Every entry is externally owned and recorded, with no control
+  action and no claim that OMP is running.
+  - **Allowlist, not blocklist.** Shown: counts, entry kinds, tool and model names, OMP's own exit records and recorded lineage. Never
+    shown: any text, title, path, prompt or digest.
+  - **No tail offset.** Every read is a whole fresh read of a stable file, so a rewrite or replacement can never splice generations.
+  - **Fails visibly.** Unknown formats, partial lines, links, FIFOs and duplicate ids each get their own state.
+  - **No writes.** Nothing is written to OMP's directory, verified by a full manifest.
+  - **No new authority.** The task store and the session contract are unchanged, and an OMP host cannot link a session to a task.
+
+  See [docs/develop-omp-observer.md](docs/develop-omp-observer.md).
 - **One workspace service for DEVELOP projects and tasks** (`runtime/contracts/develop-workspace.ts`). The `endo project`/`endo task` commands and
   the workbench's task routes now call one implementation. The service owns registration, the read model, the writable gate and session
   references. It has an operator scope (the CLI) and a launch scope for one project and one launch (the workbench). The broker is given
