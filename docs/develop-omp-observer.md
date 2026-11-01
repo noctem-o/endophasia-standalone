@@ -183,7 +183,7 @@ about 0.2 s for all 41 local files.
 
 ### Real-source evidence
 
-The source was **the installed OMP 18.14.1's existing saved sessions**: disposable ones left by Endophasia's earlier ACP and probe test
+The source was **the existing saved sessions in the local OMP directory** (OMP 18.14.1 is installed): disposable ones left by Endophasia's earlier ACP and probe test
 runs, read in place.
 
 Run: the real `endo studio` process, with its key and an empty store in a scratch directory, and `--omp-sessions` naming each disposable
@@ -215,7 +215,8 @@ every run. The first labelling attempt used the id's first 8 characters. Those c
 timestamp, and only 19 of 41 got a label. The label now uses the last 8.
 
 **No OMP process was running. None was started, no model was called, and no tool ran.** What this establishes:
-- the observer reads real OMP 18.14.1 files correctly, safely and without changing them;
+- the observer reads real OMP 18.x format-3 files correctly, safely and without changing them. 18.14.1 is covered by the aggregate pass
+  (entries in 4 files record it, 1 records 18.13.3); the two sessions read through the CLI do not record which version wrote them;
 - the real CLI and HTTP path serves them;
 - they appear in DEVELOP with the right attribution and no authority.
 

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { OmpSavedSessionObserverV0 } from "../adapters/omp/observer.ts";
 import { loadEndoStudioUiFilesV0 } from "../cockpit-http/studio-ui.ts";
+import type { EndoOmpObserverV0 } from "../protocol/omp-observation.ts";
 import { Browser, findBrowser, type Page } from "./cockpit-browser.ts";
 import { removeTempRoots } from "./cockpit-fixtures.ts";
 import { serve, stopServers } from "./cockpit-http-fixtures.ts";
@@ -60,12 +61,24 @@ function ompDirectory(): string {
 	return join(scratch, `omp-${made}`);
 }
 
-async function open(width = 1440, height = 900, withOmp = true) {
+async function open(width = 1440, height = 900, withOmp: boolean | "fail-first" = true) {
 	const omp = ompDirectory();
+	const real = new OmpSavedSessionObserverV0({ root: omp, key: OTHER_KEY });
+	let calls = 0;
+	// An observer whose first listing fails (the server answers 500), as a transient failure or a refused read would.
+	const flaky: EndoOmpObserverV0 = {
+		sessions() {
+			calls += 1;
+			if (calls === 1) throw new Error("transient");
+			return real.sessions();
+		},
+		session: (selector) => real.session(selector),
+	};
 	const server = await serve(developStore(), {
 		ui,
 		readBudget: { duty: 1, burstMs: 1e6 },
-		...(withOmp ? { omp: new OmpSavedSessionObserverV0({ root: omp, key: OTHER_KEY }) } : {}),
+		onError: () => {},
+		...(withOmp === "fail-first" ? { omp: flaky } : withOmp ? { omp: real } : {}),
 	});
 	const page = await browser.open(width, height);
 	tabs.push(page);
@@ -158,6 +171,30 @@ suite("Oh My Pi saved sessions in DEVELOP", () => {
 			await page.eval<number>("document.querySelectorAll('[data-testid=omp-group], [data-testid=omp-row]').length"),
 		).toBe(0);
 		expect(page.seen.problems).toEqual([]);
+	});
+
+	it("keeps the error and a way to read again when the first read fails, and reads the list when asked", async () => {
+		const { page } = await open(1440, 900, "fail-first");
+		await page.waitFor("document.querySelector('[data-testid=omp-problem]')");
+		expect(await page.text("[data-testid=omp-group] h3")).toBe("Oh My Pi · saved files");
+		expect(await page.eval<number>("document.querySelectorAll('[data-testid=omp-row]').length")).toBe(0);
+		await page.click("[data-testid=omp-read-again]");
+		await page.waitFor("document.querySelectorAll('[data-testid=omp-row]').length === 3");
+		expect(await page.eval<number>("document.querySelectorAll('[data-testid=omp-problem]').length")).toBe(0);
+	});
+
+	it("moves between OMP rows with the arrow keys, Home and End", async () => {
+		const { page } = await open();
+		await page.waitFor("document.querySelectorAll('[data-testid=omp-row]').length === 3");
+		const focused = () =>
+			page.eval<number>("[...document.querySelectorAll('[data-testid=omp-row]')].indexOf(document.activeElement)");
+		await page.eval("document.querySelector('[data-testid=omp-row]').focus()");
+		await page.press("ArrowDown");
+		expect(await focused()).toBe(1);
+		await page.press("End");
+		expect(await focused()).toBe(2);
+		await page.press("Home");
+		expect(await focused()).toBe(0);
 	});
 
 	it("reads again only when asked: nothing is polled", async () => {

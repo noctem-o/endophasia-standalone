@@ -123,7 +123,7 @@ Arguments:
   --key-file path        the comparison key Studio reads under. Default: cockpit-digest-key beside the installation digest key
                          (see "endo digest-key id"). It may not be the installation key, under any name, nor lie inside the store.
   --omp-sessions dir     also show Oh My Pi's saved sessions from this directory (OMP's default is ~/.omp/agent/sessions; a
-                         profile or --session-dir moves it). Read-only and metadata only: counts, states, tool and model names,
+                         profile or --session-dir moves it). Read-only and metadata only: counts, states, OMP's tool names, model names,
                          never a message, a title or a path. It is a snapshot of OMP's files each time the page asks, not a
                          connection: it cannot control OMP or tell whether OMP is running. Nothing is written there.
 

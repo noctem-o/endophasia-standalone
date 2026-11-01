@@ -2,7 +2,7 @@
 // text) and an inspector built on the neutral surface. Everything here is read from OMP's own files when the page asks, and says so:
 // none of it is live, and nothing here can reach OMP. Words are fixed in this module; from a record only closed values, numbers, times,
 // a session id and tool or model names that passed the server's grammar are shown, each as React text.
-import type { ReactElement } from "react";
+import type { KeyboardEvent, ReactElement } from "react";
 import type { EndoOmpActivityItemV0, EndoOmpSessionRowV0 } from "../../../protocol/omp-observation.ts";
 import { presentOmpSaved } from "../model/develop-session.ts";
 import { grouped } from "../model/views.ts";
@@ -53,15 +53,50 @@ const KIND_WORDS: Record<EndoOmpActivityItemV0["kind"], string> = {
 	other: "other entry",
 };
 
+/** Arrow keys, Home and End move between the OMP rows, as they do between the recorded ones. */
+function walk(event: KeyboardEvent<HTMLElement>): void {
+	if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+	const buttons = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-testid=omp-row]")];
+	const at = buttons.indexOf(document.activeElement as HTMLElement);
+	if (buttons.length === 0 || at < 0) return;
+	event.preventDefault();
+	const next =
+		event.key === "Home"
+			? 0
+			: event.key === "End"
+				? buttons.length - 1
+				: Math.max(0, Math.min(buttons.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)));
+	buttons[next]?.focus();
+}
+
 export function OmpGroup({ omp, onChoose }: { omp: OmpApi; onChoose(selector: string): void }): ReactElement | null {
 	const { list, reading, selected, problem } = omp.state;
 	if (list !== null && !list.available) return null;
-	if (list === null)
-		return reading ? (
-			<output className="loading">
-				<span className="spinner" aria-hidden="true" /> Reading Oh My Pi's saved sessions…
-			</output>
-		) : null;
+	if (list === null) {
+		if (reading)
+			return (
+				<output className="loading">
+					<span className="spinner" aria-hidden="true" /> Reading Oh My Pi's saved sessions…
+				</output>
+			);
+		if (problem === null) return null;
+		// No list was ever obtained (a refused or failed first read): say so and keep the way to read again, or the source would vanish.
+		return (
+			<section className="nav-group" aria-labelledby="develop-group-omp" data-testid="omp-group">
+				<h3 id="develop-group-omp">Oh My Pi · saved files</h3>
+				<Note tone="warn">
+					<span data-testid="omp-problem">
+						Oh My Pi's saved sessions, if this Studio observes them, could not be read: {problem}
+					</span>
+				</Note>
+				<p>
+					<button type="button" className="btn small-btn" data-testid="omp-read-again" onClick={omp.refreshList}>
+						Read again
+					</button>
+				</p>
+			</section>
+		);
+	}
 	return (
 		<section className="nav-group" aria-labelledby="develop-group-omp" data-testid="omp-group">
 			<h3 id="develop-group-omp">Oh My Pi · saved files ({list.sessions.length})</h3>
@@ -94,7 +129,7 @@ export function OmpGroup({ omp, onChoose }: { omp: OmpApi; onChoose(selector: st
 			{list.sessions.length === 0 ? (
 				<p className="dim small">No saved OMP session files in the named directory.</p>
 			) : (
-				<ul className="caplist">
+				<ul className="caplist" onKeyDown={walk}>
 					{list.sessions.map((row) => (
 						<li key={row.selector}>
 							<button

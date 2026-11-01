@@ -127,7 +127,8 @@ implementation detail and its limitations. The real recordings and studies, with
   saved JSONL sessions (format 3) from the directory the operator names, read-only and metadata only (counts, entry kinds, tool and model
   names, OMP's own exit records and lineage; no text, title or path). A whole fresh read per request, never a tail; unknown formats
   refused visibly; no file written; no control and no liveness claim. Tested with adversarial synthetic journals over the adapter, HTTP
-  and a real browser, and against the installed OMP 18.14.1's existing saved sessions (read in place, unchanged; no OMP process run).
+  and a real browser, and against the existing saved sessions in the local OMP directory (OMP 18.14.1 installed; 18.14.1 and 18.13.3 recorded in the files;
+  read in place, unchanged; no OMP process run).
 - Tests: a deterministic suite with a fake Pi child process and a fake OpenAI-compatible endpoint, plus an opt-in
   acceptance suite against a real installed Pi. The real Pi 1.0.0 recording (mapping.1, a historical specimen pinned by digest) is in
   [`research/pi-conformance/1.0.0/`](../research/pi-conformance/1.0.0/).

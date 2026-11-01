@@ -359,6 +359,8 @@ export class Page {
 			Enter: { code: "Enter", vk: 13, text: "\r" },
 			ArrowDown: { code: "ArrowDown", vk: 40 },
 			ArrowUp: { code: "ArrowUp", vk: 38 },
+			Home: { code: "Home", vk: 36 },
+			End: { code: "End", vk: 35 },
 			Tab: { code: "Tab", vk: 9 },
 			PageDown: { code: "PageDown", vk: 34 },
 			PageUp: { code: "PageUp", vk: 33 },

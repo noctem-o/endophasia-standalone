@@ -31,10 +31,10 @@
 
 ### Added
 - **Oh My Pi saved sessions in DEVELOP** (`endo studio --omp-sessions <dir>`). This is the first real non-Pi session source. Studio reads
-  OMP's saved JSONL sessions (format 3, title slot v1, checked against the installed OMP 18.14.1) from the directory the operator names,
+  OMP's saved JSONL sessions (format 3, title slot v1, checked against the local files of the installed OMP 18.14.1, which record 18.13.3 and 18.14.1) from the directory the operator names,
   and shows them in DEVELOP as the neutral surface's `omp-saved` source. Every entry is externally owned and recorded, with no control
   action and no claim that OMP is running.
-  - **Allowlist, not blocklist.** Shown: counts, entry kinds, tool and model names, OMP's own exit records and recorded lineage. Never
+  - **Allowlist, not blocklist.** Shown: counts, entry kinds, OMP's built-in tool names, plain model names (never a path or a model file), OMP's own exit records and recorded lineage. Never
     shown: any text, title, path, prompt or digest.
   - **No tail offset.** Every read is a whole fresh read of a stable file, so a rewrite or replacement can never splice generations.
   - **Fails visibly.** Unknown formats, partial lines, links, FIFOs and duplicate ids each get their own state.
