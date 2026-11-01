@@ -143,7 +143,9 @@ automatically, and a reference gives a task no control over a session: no resume
 - `endo task` can list, add and change status; editing words and links is in the workbench page.
 - A registered path or task text is not scanned for secrets.
 - The store has no cross-machine sync. Moving a project to another path means registering it again.
-- Locks: if two writers find the same dead-pid lock at the same moment, both can proceed; and a lock naming a pid the system has since reused makes
+- Locks: a lock of a dead process is taken aside by an atomic rename and discarded only if it is still the very lock judged stale (a live one a
+  third writer took meanwhile is put back); if two writers find the same dead-pid lock at the same moment and a third acquires between the rename and
+  the put-back, two can still proceed (a window of microseconds). And a lock naming a pid the system has since reused makes
   writes answer `busy` until `develop/tasks.lock` is removed by hand. This is the same pattern as the attachment's writer lock, documented rather than redesigned.
 - Real-runtime evidence is one local smoke, not conformance: the installed **Pi 1.4.0** launched once from the registered directory with the workbench
   and `--project`; a page paired, created a task, linked the session (Pi's own session id fit the reference format; relation `current`) and moved its

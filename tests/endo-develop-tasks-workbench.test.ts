@@ -336,6 +336,25 @@ describe("a session reference is explicit, attributed and scoped to its launch",
 		});
 	});
 
+	it("links a session whose plain Pi id is as long as the mapper keeps it, and one longer than that through its digest", async () => {
+		for (const length of [161, 200, 201]) {
+			const w = launch();
+			w.session.piSessionId = "a".repeat(length);
+			const grant = await w.pair();
+			const task = view(await w.call("POST", "workspace/tasks/create", { title: "t" }, grant)).tasks[0]!;
+			const linked = await w.call(
+				"POST",
+				"workspace/tasks/link-session",
+				{ taskId: task.id, expectedRevision: task.revision },
+				grant,
+			);
+			expect(linked.status, `${length} characters`).toBe(200);
+			const stored = new DevelopTasksStoreV0(w.root).read();
+			expect(stored.ok && stored.file.tasks[0]!.sessions[0]!.sessionId).toBe(piEndoSessionIdV0("a".repeat(length)));
+			expect(view(linked).tasks[0]!.sessions[0]!.relation).toBe("current");
+		}
+	});
+
 	it("links a session of an attachment whose name is as long as the registry allows", async () => {
 		// The harness registry accepts a dotted kind of up to 128 characters, so an 81-128 character attachment is a real attachment.
 		const attachment = `pi.${"long-".repeat(23)}x`;

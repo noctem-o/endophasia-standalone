@@ -22,6 +22,7 @@ import {
 	constants,
 	fstatSync,
 	fsyncSync,
+	linkSync,
 	lstatSync,
 	mkdirSync,
 	openSync,
@@ -179,9 +180,18 @@ export class DevelopTasksStoreV0 {
 				if (errno(error) !== "EEXIST") return "failed";
 			}
 			// Held. A lock whose process is gone is replaced; an unreadable one only once it is old (a crash while it was being written).
+			let seen: string;
+			try {
+				seen = readFileSync(path, "utf8");
+			} catch (error) {
+				// Released between our failed create and this read: nothing is stale, try to take it. (Never remove what is no longer there:
+				// by now it may be a lock another writer has just taken.)
+				if (errno(error) === "ENOENT") continue;
+				return "failed";
+			}
 			let holder: number | undefined;
 			try {
-				const parsed = JSON.parse(readFileSync(path, "utf8")) as { pid?: unknown };
+				const parsed = JSON.parse(seen) as { pid?: unknown };
 				if (typeof parsed.pid === "number" && Number.isSafeInteger(parsed.pid) && parsed.pid > 0)
 					holder = parsed.pid;
 			} catch {
@@ -190,7 +200,8 @@ export class DevelopTasksStoreV0 {
 			let stale = false;
 			if (holder === undefined) {
 				const info = lstatSync(path, { throwIfNoEntry: false });
-				stale = info === undefined || Date.now() - info.mtimeMs > 60_000;
+				if (info === undefined) continue;
+				stale = Date.now() - info.mtimeMs > 60_000;
 			} else if (holder !== process.pid) {
 				try {
 					process.kill(holder, 0);
@@ -199,7 +210,29 @@ export class DevelopTasksStoreV0 {
 				}
 			}
 			if (stale) {
-				rmSync(path, { force: true });
+				// Take it aside atomically, then look at what was taken: only the very lock judged stale is discarded. If a writer replaced it in
+				// the meantime, what was taken is a live lock, and it is put back (a rename is the only step another writer cannot interleave).
+				const aside = join(this.#dir, `${LOCK}.stale-${process.pid}-${hex(6)}`);
+				try {
+					renameSync(path, aside);
+					let taken: string | undefined;
+					try {
+						taken = readFileSync(aside, "utf8");
+					} catch {
+						taken = undefined;
+					}
+					if (taken === seen) rmSync(aside, { force: true });
+					else {
+						try {
+							linkSync(aside, path);
+						} catch {
+							// somebody else has already taken the lock; the live one we moved was theirs to lose, and finishes harmlessly
+						}
+						rmSync(aside, { force: true });
+					}
+				} catch {
+					// already gone: somebody else replaced it first
+				}
 				continue;
 			}
 			if (Date.now() >= deadline) return "busy";

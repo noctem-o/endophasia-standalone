@@ -173,7 +173,8 @@ export const ENDO_PROJECT_ID_PATTERN_V0 = /^endo\.project\.[0-9a-f]{32}$/;
 export const ENDO_TASK_ID_PATTERN_V0 = /^endo\.task\.[0-9a-f]{32}$/;
 export const ENDO_LINK_ID_PATTERN_V0 = /^[0-9a-f]{16}$/;
 export const ENDO_LAUNCH_ID_PATTERN_V0 = /^[0-9a-f]{16}$/;
-const SESSION_ID_PATTERN = /^endo\.session\.pi\.[A-Za-z0-9._:-]{1,160}$/;
+// Exactly what `piEndoSessionIdV0` can produce: the Pi id itself (1-200 plain characters) or a digest of one that is not plain.
+const SESSION_ID_PATTERN = /^endo\.session\.pi\.[A-Za-z0-9._-]{1,200}$/;
 
 // ---- the strict validator -----------------------------------------------------------------------------------------------------------
 
